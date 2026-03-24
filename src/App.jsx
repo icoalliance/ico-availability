@@ -49,7 +49,7 @@ function AvailCards({ av, desired }) {
 
       {desired && (
         <div className="lpo-note">
-          At {LPO.current} leads/offer: {fmtN(desired)} leads ≈ {Math.round(desired / LPO.current)} unique consumer relationships
+          At {LPO.current} leads/offer: {fmtN(desired)} leads ≈ {Math.round(desired / LPO.current)} unique offers
         </div>
       )}
 
@@ -118,7 +118,7 @@ function AvailCards({ av, desired }) {
           ))}
         </div>
         <div className="lpo-explain">
-          Each offer routes to <strong>{LPO.current}</strong> dealers on average. Ring values show the best single nearby zip — not a sum — because 15-mi radii heavily overlap. A negative base zip means the pool is over-routed; neighbor availability confirms real demand that can justify a new BC.
+          Each offer routes to <strong>{LPO.current}</strong> dealers on average based on actual delivery (Attribution Report). Note: the MAT models availability using a <strong>3x routing assumption</strong> — meaning it expects each offer to go to 3 dealers. Since actuals run at 2x, a negative base zip doesn't mean the market is truly exhausted; it means the zip is over-allocated against the 3x model. Neighboring zip availability confirms real demand exists and is why ICO Ops can approve new BCs in negative zips.
         </div>
       </div>
     </div>
@@ -178,10 +178,23 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName }) {
     <div className="reserve-box">
       <div className="reserve-confirmed">
         <div className="reserve-confirmed-icon">✓</div>
-        <div>
+        <div style={{flex:1}}>
           <strong>{fmtN(confirmed.leadsReserved)} leads reserved</strong> for {confirmed.dealerName} in zip {confirmed.zip}
           <br /><span style={{fontSize:12,color:'var(--muted)'}}>Expires {fmtDate(confirmed.expiresAt)} · ID: {confirmed.id.slice(-8)}</span>
         </div>
+        <button
+          className="res-cancel-btn"
+          style={{marginLeft:16,flexShrink:0}}
+          onClick={async () => {
+            await cancelReservation(confirmed.id)
+            setConfirmed(null)
+            setChecked(false)
+            onReserved()
+          }}
+        >Release</button>
+      </div>
+      <div style={{fontSize:12,color:'var(--muted)',marginTop:10,padding:'8px 12px',background:'#f8f9fc',borderRadius:6,lineHeight:1.5}}>
+        Changed your mind later? Scroll down to the <strong>Active Reservations</strong> panel and click <strong>Release</strong> next to this entry — leads return to availability immediately.
       </div>
     </div>
   )
