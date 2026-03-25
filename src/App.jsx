@@ -69,7 +69,11 @@ function AvailCards({ av, desired }) {
         <div className={`ring-card ${best15 > 0 ? 'ring-boost1' : 'ring-neg'}`}>
           <div className="ring-label">0 – 15 mi <span className="ring-count">({n15} zips)</span></div>
           <div className={`ring-avail ${best15 > 0 ? 'av-pos' : 'av-neg'}`}>{fmtN(best15)}</div>
-          <div className="ring-sublabel">{subLabel(bz15)}</div>
+          <div className="ring-sublabel">
+            {subLabel(bz15)}
+            {av.baseOverage > 0 && <span className="netting-note"> · net of {fmtN(av.baseOverage)} overage</span>}
+          </div>
+          {bz15 && bz15.underdelivery && <div className="ud-warning">⚠ {bz15.zip} trending underdelivery ({bz15.underMonths.join(', ')}) — ICO Ops may not approve</div>}
           <div className="ring-max"><Tag val={best15} desired={desired} /></div>
         </div>
 
@@ -77,7 +81,11 @@ function AvailCards({ av, desired }) {
         <div className={`ring-card ${best30 > 0 ? 'ring-boost2' : 'ring-neg'}`}>
           <div className="ring-label">15 – 30 mi <span className="ring-count">({n30} zips)</span></div>
           <div className={`ring-avail ${best30 > 0 ? 'av-pos' : 'av-neg'}`}>{fmtN(best30)}</div>
-          <div className="ring-sublabel">{subLabel(bz30)}</div>
+          <div className="ring-sublabel">
+            {subLabel(bz30)}
+            {av.baseOverage > 0 && <span className="netting-note"> · net of {fmtN(av.baseOverage)} overage</span>}
+          </div>
+          {bz30 && bz30.underdelivery && <div className="ud-warning">⚠ {bz30.zip} trending underdelivery ({bz30.underMonths.join(', ')}) — ICO Ops may not approve</div>}
           <div className="ring-max"><Tag val={best30} desired={desired} /></div>
         </div>
 
@@ -86,6 +94,7 @@ function AvailCards({ av, desired }) {
           <div className="ring-label">30 – 45 mi <span className="ring-count">({n45} zips)</span></div>
           <div className={`ring-avail ${best45 > 0 ? 'av-pos' : 'av-neg'}`}>{fmtN(best45)}</div>
           <div className="ring-sublabel">{subLabel(bz45)}</div>
+          {bz45 && bz45.underdelivery && <div className="ud-warning">⚠ {bz45.zip} trending underdelivery ({bz45.underMonths.join(', ')}) — ICO Ops may not approve</div>}
           <div className="ring-max"><Tag val={best45} desired={desired} /></div>
         </div>
       </div>
@@ -97,14 +106,20 @@ function AvailCards({ av, desired }) {
             <thead><tr><th>Distance · Zip · Location</th><th className="av-num">Available</th><th>Notes</th></tr></thead>
             <tbody>
               {ring15.filter(e=>e.avail>0).length > 0 && <tr className="av-section"><td colSpan={3}>0–15 mi ({n15} zips)</td></tr>}
-              {ring15.filter(e=>e.avail>0).map(e => <ZipRow key={e.zip} e={e} />)}
+              {ring15.filter(e=>e.avail>0).map(e => <ZipRow key={e.zip} e={e} baseOverage={av.baseOverage} />)}
               {ring30.filter(e=>e.avail>0).length > 0 && <tr className="av-section"><td colSpan={3}>15–30 mi ({n30} zips)</td></tr>}
-              {ring30.filter(e=>e.avail>0).map(e => <ZipRow key={e.zip} e={e} />)}
+              {ring30.filter(e=>e.avail>0).map(e => <ZipRow key={e.zip} e={e} baseOverage={av.baseOverage} />)}
               {ring45.filter(e=>e.avail>0).length > 0 && <tr className="av-section"><td colSpan={3}>30–45 mi ({n45} zips)</td></tr>}
-              {ring45.filter(e=>e.avail>0).map(e => <ZipRow key={e.zip} e={e} />)}
+              {ring45.filter(e=>e.avail>0).map(e => <ZipRow key={e.zip} e={e} baseOverage={av.baseOverage} />)}
             </tbody>
           </table>
         </details>
+      )}
+
+      {av.hasUnderdeliveryWarning && (
+        <div className="ud-banner">
+          <strong>⚠ Underdelivery Caution</strong> — {av.underdeliveryCount} nearby zip{av.underdeliveryCount > 1 ? 's have' : ' has'} shown underdelivery in 2+ of the last 3 months. ICO Ops may reduce or deny approval in these areas regardless of available lead counts. Review the dealer table below for delivery trends.
+        </div>
       )}
 
       <div className="lpo-panel">
@@ -125,15 +140,21 @@ function AvailCards({ av, desired }) {
   )
 }
 
-function ZipRow({ e }) {
+function ZipRow({ e, baseOverage }) {
+  const showNetting = baseOverage > 0 && e.dist <= 30
   return (
-    <tr className="av-detail">
+    <tr className={`av-detail ${e.underdelivery ? 'ud-row' : ''}`}>
       <td className="av-indent">
         {e.dist}mi · {e.zip} · {e.name}
         {e.hasBC && <span className="bc-pill">BC</span>}
+        {e.underdelivery && <span className="ud-pill">⚠ underdelivery</span>}
       </td>
-      <td className="av-num av-pos">{fmtN(e.avail)}</td>
+      <td className="av-num av-pos">
+        {fmtN(e.avail)}
+        {showNetting && e.rawAvail !== e.avail && <span className="raw-note"> (raw {fmtN(e.rawAvail)})</span>}
+      </td>
       <td className="av-note">
+        {e.underdelivery && <span className="ud-note">{e.underMonths.join(', ')} </span>}
         {e.odExcess > 0 ? `+${e.odExcess} overdelivery (${e.odMonth} ${fmtPct(e.odPct)})` : ''}
       </td>
     </tr>
@@ -422,6 +443,7 @@ function UpdateModal({ onClose }) {
     { key:'mat', label:'Opportunity Finder OLR', badge:'DAILY', badgeColor:'#dc2626', desc:'Download daily from Power BI (e.g. Opportunity Finder OLR_3_23.xlsx). Contains zip-level available leads and BC targets.' },
     { key:'dealer', label:'Dealer Export', badge:'AS NEEDED', badgeColor:'#c8860a', desc:'Export when BCs are added or cancelled (e.g. Dealer_Export.xlsx).' },
     { key:'list', label:'Dealer List (Performance)', badge:'MONTHLY', badgeColor:'var(--muted)', desc:'Export the Dealer List tab monthly for updated leads delivered and % of target.' },
+    { key:'lms', label:'Local Market Sheet', badge:'AS NEEDED', badgeColor:'#7c3aed', desc:'Export from Power BI for a specific zip + radius. Used to validate real consumer offer volume and confirm market demand before approval.' },
   ]
 
   return (
