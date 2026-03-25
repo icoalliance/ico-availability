@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 import { calcAvailability, getZipInfo, fmtN, fmtPct, LPO } from './utils'
 import { fetchReservations, createReservation, cancelReservation, daysUntil, fmtDate } from './api'
@@ -6,11 +6,11 @@ import { dealerMap } from './dealerMap'
 import { KBB_LOGO_B64 } from './kbbLogo'
 import { coordsMap } from './coordsMap'
 import { haversine } from './utils'
+import { greenfieldZips, dmaSaturation, DATA_DATE, DATA_BC_COUNT } from './marketData'
 
 // ── Small helpers ──────────────────────────────────────────────────────────
 const pctClass = p => !p ? '' : p >= 1 ? 'pct-green' : p >= 0.75 ? 'pct-yellow' : 'pct-red'
 const availColor = v => v > 0 ? 'av-pos' : v < 0 ? 'av-neg' : ''
-const numClass = v => v > 0 ? 'val-green' : v < 0 ? 'val-red' : ''
 
 function Tag({ val, desired }) {
   if (!desired || val === null) return null
@@ -272,6 +272,17 @@ function ReservationsPanel({ reservations, onCancel, onRefresh }) {
     <div className="res-panel">
       <div className="res-panel-header">
         <div className="res-panel-title">Active Reservations ({active.length})</div>
+          {active.length > 0 && (() => {
+            const bySeller = {}
+            active.forEach(r => { bySeller[r.reservedBy] = (bySeller[r.reservedBy] || 0) + r.leadsReserved })
+            return (
+              <div className="res-seller-summary">
+                {Object.entries(bySeller).sort((a,b)=>b[1]-a[1]).map(([seller, leads]) => (
+                  <span key={seller} className="res-seller-chip">{seller}: {fmtN(leads)} leads</span>
+                ))}
+              </div>
+            )
+          })()}
         <div className="res-panel-actions">
           <button className="res-action-btn" onClick={onRefresh}>↻ Refresh</button>
         </div>
@@ -431,7 +442,7 @@ function UpdateModal({ onClose }) {
       try {
         const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'})
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, defval:null})
-        setMsg(ft, `✓ Loaded ${rows.length.toLocaleString()} rows — refresh the page to apply`, 'success')
+        setMsg(ft, `✓ File validated: ${rows.length.toLocaleString()} rows detected. To apply, replace src/${ft === 'mat' ? 'matMap' : ft === 'dealer' ? 'dealerMap' : 'dealerMap'}.js and redeploy.`, 'success')
       } catch(err) {
         setMsg(ft, '✗ ' + err.message, 'error')
       }
@@ -450,7 +461,7 @@ function UpdateModal({ onClose }) {
     <div className="import-modal-overlay open" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="import-modal">
         <div className="import-modal-title">Update Data</div>
-        <div className="import-modal-sub">Load fresh exports to update availability and dealer data. The Opportunity Finder OLR should be refreshed daily.</div>
+        <div className="import-modal-sub">Data files are built into the app at deployment time. To refresh with new exports, update the source files and redeploy via GitHub. The notes below show which file to replace for each data type.</div>
         {rows.map(({key, label, badge, badgeColor, desc}) => (
           <div key={key} className="import-row">
             <div className="import-row-title">
@@ -485,6 +496,10 @@ export default function App() {
   const [resLoading, setResLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [sellerName, setSellerName] = useState(() => localStorage.getItem('ico_seller_name') || '')
+  const [recentZips, setRecentZips] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('ico_recent_zips') || '[]') } catch { return [] }
+  })
+  const [showMarkets, setShowMarkets] = useState(false)
   const [showNamePrompt, setShowNamePrompt] = useState(false)
   // coordsMap imported below
 
@@ -492,10 +507,11 @@ export default function App() {
     try {
       const data = await fetchReservations()
       setReservations(data)
+      setResLoading(false)
     } catch(e) {
       console.error('Could not load reservations:', e)
+      setResLoading(false)
     }
-    setResLoading(false)
   }, [])
 
   useEffect(() => { loadReservations() }, [loadReservations])
@@ -511,6 +527,11 @@ export default function App() {
     setShowNamePrompt(false)
   }
 
+  function handleZipClick(z) {
+    setZip(z)
+    setTimeout(() => handleCheck(), 50)
+  }
+
   function handleCheck() {
     setError(''); setResult(null)
     let z = zip.trim()
@@ -521,43 +542,49 @@ export default function App() {
     const av = calcAvailability(z, reservations)
     const des = desired ? parseInt(desired, 10) : null
     setResult({ info, av, desired: des })
+    // Save to recent searches (enhancement 5)
+    setRecentZips(prev => {
+      const next = [{ zip: z, city: info.city, state: info.state }, ...prev.filter(r => r.zip !== z)].slice(0, 8)
+      localStorage.setItem('ico_recent_zips', JSON.stringify(next))
+      return next
+    })
   }
 
-  async function handleCancel(id) {
-    await cancelReservation(id)
-    await loadReservations()
-    // Re-run check with updated reservations
+  // Single refresh function used by both reserve and release actions
+  async function refreshReservations() {
+    const fresh = await fetchReservations()
+    setReservations(fresh)  // updates status bar count immediately
+    setResLoading(false)
     if (result) {
-      const av = calcAvailability(result.info.zip, await fetchReservations())
-      setResult(r => ({...r, av}))
-    }
-  }
-
-  async function onReserved() {
-    await loadReservations()
-    if (result) {
-      const fresh = await fetchReservations()
-      setReservations(fresh)
       const av = calcAvailability(result.info.zip, fresh)
       setResult(r => ({...r, av}))
     }
   }
 
+  async function handleCancel(id) {
+    await cancelReservation(id)
+    await refreshReservations()
+  }
+
+  async function onReserved() {
+    await refreshReservations()
+  }
+
   // Determine verdict
   let verdict = null, vClass = 'caution', vIcon = '~'
   if (result) {
-    const { base, best15, best30, best45 } = result.av
+    const { base, best15, best30, best45, hasUnderdeliveryWarning } = result.av
     const des = result.desired
     if (base === null)         { verdict='UNKNOWN';    vClass='caution'; vIcon='?' }
     else if (des !== null) {
       if (base >= des)         { verdict='APPROVED';   vClass='approve'; vIcon='✓' }
-      else if (best15 >= des)  { verdict='APPROVABLE'; vClass='caution'; vIcon='~' }
-      else if (best30 >= des)  { verdict='APPROVABLE'; vClass='caution'; vIcon='~' }
-      else if (best45 >= des)  { verdict='APPROVABLE'; vClass='caution'; vIcon='~' }
+      else if (best15 >= des)  { verdict=hasUnderdeliveryWarning?'CAUTION':'APPROVABLE'; vClass='caution'; vIcon='~' }
+      else if (best30 >= des)  { verdict=hasUnderdeliveryWarning?'CAUTION':'APPROVABLE'; vClass='caution'; vIcon='~' }
+      else if (best45 >= des)  { verdict=hasUnderdeliveryWarning?'CAUTION':'APPROVABLE'; vClass='caution'; vIcon='~' }
       else                     { verdict='DENIED';     vClass='deny';    vIcon='✗' }
     } else {
       if (base > 0)            { verdict='AVAILABLE';  vClass='approve'; vIcon='✓' }
-      else if (best15 > 0)     { verdict='BOOSTABLE';  vClass='caution'; vIcon='~' }
+      else if (best15 > 0)     { verdict=hasUnderdeliveryWarning?'CAUTION':'BOOSTABLE'; vClass='caution'; vIcon='~' }
       else                     { verdict='OVERSOLD';   vClass='deny';    vIcon='✗' }
     }
   }
@@ -583,6 +610,7 @@ export default function App() {
         {sellerName && (
           <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:12}}>
             <span style={{fontFamily:'var(--mono)',fontSize:11,color:'rgba(255,255,255,.4)'}}>{sellerName}</span>
+            <button className="mkt-intel-btn" onClick={() => setShowMarkets(m => !m)}>📊 Market Intel</button>
             <button className="import-trigger-btn" onClick={() => setShowModal(true)}>↑ Update Data</button>
           </div>
         )}
@@ -618,6 +646,19 @@ export default function App() {
             <button className="check-btn" onClick={handleCheck}>Check</button>
           </div>
         </div>
+
+        {showMarkets && <HotMarketsPanel onZipClick={z => { setZip(z); setShowMarkets(false); setTimeout(handleCheck, 50) }} />}
+
+        {recentZips.length > 0 && !showMarkets && (
+          <div className="recent-zips">
+            <span className="recent-label">Recent:</span>
+            {recentZips.map(r => (
+              <button key={r.zip} className="recent-zip-btn" onClick={() => { setZip(r.zip); setTimeout(handleCheck, 50) }}>
+                {r.zip} <span className="recent-city">{r.city}, {r.state}</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         {error && <div className="error-msg">{error}</div>}
 
@@ -689,11 +730,10 @@ export default function App() {
                 />
               )}
 
+              <TenureInsightForZip dma={info.dma} searchZip={info.zip} />
               <DealerTable dma={info.dma} searchZip={info.zip} />
 
-              <div className="footer">
-                Opportunity Finder OLR &amp; Dealer data as of 3/23/26 · 3,039 active BCs · Ring values = best single nearby zip (not a sum)
-              </div>
+              <DataFreshnessFooter />
             </>
           )
         })()}
@@ -706,6 +746,141 @@ export default function App() {
       </main>
     </>
   )
+}
+
+
+// ── Bug 5: Data freshness footer ──────────────────────────────────────────
+function DataFreshnessFooter() {
+  const dataDate = new Date('2026-03-23')
+  const now = new Date()
+  const daysOld = Math.floor((now - dataDate) / 86400000)
+  const isStale = daysOld > 1
+
+  return (
+    <div className={`footer ${isStale ? 'footer-stale' : ''}`}>
+      <span>
+        Opportunity Finder OLR &amp; Dealer data as of {DATA_DATE} · {DATA_BC_COUNT.toLocaleString()} active BCs · Ring values = best single nearby zip (not a sum)
+      </span>
+      {isStale && (
+        <span className="stale-warning">
+          ⚠ Data is {daysOld} day{daysOld !== 1 ? 's' : ''} old — refresh via ↑ Update Data
+        </span>
+      )}
+    </div>
+  )
+}
+
+// ── Enhancement: Hot Markets panel ───────────────────────────────────────
+function HotMarketsPanel({ onZipClick }) {
+  const [view, setView] = useState('available') // 'available' | 'greenfield' | 'over'
+
+  const topAvail = Object.entries(dmaSaturation)
+    .filter(([,s]) => s.avail > 0)
+    .sort((a,b) => b[1].avail - a[1].avail)
+    .slice(0, 10)
+
+  const topOver = Object.entries(dmaSaturation)
+    .filter(([,s]) => s.avail < 0)
+    .sort((a,b) => a[1].avail - b[1].avail)
+    .slice(0, 10)
+
+  const topGreen = greenfieldZips.slice(0, 10)
+
+  return (
+    <div className="hot-markets-panel">
+      <div className="hot-markets-header">
+        <div className="hot-markets-title">Market Intelligence</div>
+        <div className="hot-markets-tabs">
+          <button className={`hot-tab ${view==='available'?'hot-tab-active':''}`} onClick={()=>setView('available')}>🟢 Most Available</button>
+          <button className={`hot-tab ${view==='greenfield'?'hot-tab-active':''}`} onClick={()=>setView('greenfield')}>✨ Greenfield</button>
+          <button className={`hot-tab ${view==='over'?'hot-tab-active':''}`} onClick={()=>setView('over')}>🔴 Over-Allocated</button>
+        </div>
+      </div>
+
+      {view === 'available' && (
+        <div className="hot-markets-body">
+          <div className="hot-markets-desc">DMAs with the most unallocated leads — prime targets for new BC prospecting.</div>
+          <table className="hot-table">
+            <thead><tr><th>DMA</th><th className="th-r">Available</th><th className="th-r">Allocated</th><th className="th-r">BCs</th></tr></thead>
+            <tbody>
+              {topAvail.map(([dma, s]) => (
+                <tr key={dma}>
+                  <td className="hot-dma">{dma}</td>
+                  <td className="td-right avail-pos td-num">{fmtN(s.avail)}</td>
+                  <td className="td-right td-num td-dim">{fmtN(s.target)}</td>
+                  <td className="td-right td-dim">{s.dealers}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {view === 'greenfield' && (
+        <div className="hot-markets-body">
+          <div className="hot-markets-desc">Zips with high availability and no active Buying Center — untapped markets for new BC placement.</div>
+          <table className="hot-table">
+            <thead><tr><th>Zip</th><th>Location</th><th>DMA</th><th className="th-r">Available</th><th></th></tr></thead>
+            <tbody>
+              {topGreen.map(e => (
+                <tr key={e.zip}>
+                  <td className="td-mono">{e.zip}</td>
+                  <td>{e.city}, {e.state}</td>
+                  <td className="td-dim" style={{fontSize:11}}>{e.dma}</td>
+                  <td className="td-right avail-pos td-num">{fmtN(e.avail)}</td>
+                  <td><button className="hot-check-btn" onClick={()=>onZipClick(e.zip)}>Check</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {view === 'over' && (
+        <div className="hot-markets-body">
+          <div className="hot-markets-desc">Most over-allocated DMAs — exercise caution when approving new BCs here.</div>
+          <table className="hot-table">
+            <thead><tr><th>DMA</th><th className="th-r">Over-Allocated</th><th className="th-r">Target</th><th className="th-r">BCs</th></tr></thead>
+            <tbody>
+              {topOver.map(([dma, s]) => (
+                <tr key={dma}>
+                  <td className="hot-dma">{dma}</td>
+                  <td className="td-right avail-neg td-num">{fmtN(s.avail)}</td>
+                  <td className="td-right td-num td-dim">{fmtN(s.target)}</td>
+                  <td className="td-right td-dim">{s.dealers}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Enhancement: Tenure insight callout ──────────────────────────────────
+function TenureInsight({ tenure }) {
+  if (tenure === null || tenure === undefined) return null
+  const isNew = tenure <= 6
+  const isMid = tenure > 6 && tenure <= 24
+  if (!isNew && !isMid) return null
+  return (
+    <div className="tenure-insight">
+      {isNew
+        ? <span>💡 New BC ({tenure}mo tenure) — data shows new BCs average <strong>110% of target</strong> in their first 6 months. Strong historical performance for new installs.</span>
+        : <span>💡 Mid-tenure BC ({tenure}mo) — dealers at this stage average <strong>106% of target</strong>. Solid track record.</span>
+      }
+    </div>
+  )
+}
+
+
+// ── Enhancement: Tenure insight for searched zip's dealer ────────────────
+function TenureInsightForZip({ dma, searchZip }) {
+  const dealers = dealerMap[dma] || []
+  const dealer = dealers.find(d => d[0] === searchZip)
+  if (!dealer) return null
+  return <TenureInsight tenure={dealer[10]} />
 }
 
 function NameForm({ onSave }) {
