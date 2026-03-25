@@ -13,6 +13,7 @@ export default defineConfig({
           'data-coords': ['./src/coordsMap.js'],
           'data-dealer': ['./src/dealerMap.js'],
           'data-logo':   ['./src/kbbLogo.js'],
+          'data-market': ['./src/marketData.js'],
           'vendor':      ['react', 'react-dom', 'xlsx'],
         }
       }
