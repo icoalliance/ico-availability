@@ -6,7 +6,7 @@ import { dealerMap } from './dealerMap'
 import { KBB_LOGO_B64 } from './kbbLogo'
 import { coordsMap } from './coordsMap'
 import { haversine } from './utils'
-import { greenfieldZips, dmaSaturation, DATA_DATE, DATA_BC_COUNT } from './marketData'
+import { whitespaceZips, dmaSaturation, DATA_DATE, DATA_BC_COUNT } from './marketData'
 
 // ── Small helpers ──────────────────────────────────────────────────────────
 const pctClass = p => !p ? '' : p >= 1 ? 'pct-green' : p >= 0.75 ? 'pct-yellow' : 'pct-red'
@@ -606,7 +606,7 @@ export default function App() {
 
       <header>
         <img src={`data:image/png;base64,${KBB_LOGO_B64}`} alt="KBB 100 Years" style={{height:48,width:'auto'}} />
-        <h1>ICO Lead Availability Checker</h1>
+        <h1>ICO Intelligence</h1>
         {sellerName && (
           <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:12}}>
             <span style={{fontFamily:'var(--mono)',fontSize:11,color:'rgba(255,255,255,.4)'}}>{sellerName}</span>
@@ -718,6 +718,7 @@ export default function App() {
                 <div className="rec-body" dangerouslySetInnerHTML={{__html: recText}} />
               </div>
 
+              <MarketIntelligenceInline zip={info.zip} dma={info.dma} av={av} />
               <AvailCards av={av} desired={des} />
 
               {des && (
@@ -772,7 +773,7 @@ function DataFreshnessFooter() {
 
 // ── Enhancement: Hot Markets panel ───────────────────────────────────────
 function HotMarketsPanel({ onZipClick }) {
-  const [view, setView] = useState('available') // 'available' | 'greenfield' | 'over'
+  const [view, setView] = useState('available') // 'available' | 'whitespace' | 'over'
 
   const topAvail = Object.entries(dmaSaturation)
     .filter(([,s]) => s.avail > 0)
@@ -784,7 +785,7 @@ function HotMarketsPanel({ onZipClick }) {
     .sort((a,b) => a[1].avail - b[1].avail)
     .slice(0, 10)
 
-  const topGreen = greenfieldZips.slice(0, 10)
+  const topGreen = whitespaceZips.slice(0, 10)
 
   return (
     <div className="hot-markets-panel">
@@ -792,7 +793,7 @@ function HotMarketsPanel({ onZipClick }) {
         <div className="hot-markets-title">Market Intelligence</div>
         <div className="hot-markets-tabs">
           <button className={`hot-tab ${view==='available'?'hot-tab-active':''}`} onClick={()=>setView('available')}>🟢 Most Available</button>
-          <button className={`hot-tab ${view==='greenfield'?'hot-tab-active':''}`} onClick={()=>setView('greenfield')}>✨ Greenfield</button>
+          <button className={`hot-tab ${view==='whitespace'?'hot-tab-active':''}`} onClick={()=>setView('whitespace')}>✨ Whitespace</button>
           <button className={`hot-tab ${view==='over'?'hot-tab-active':''}`} onClick={()=>setView('over')}>🔴 Over-Allocated</button>
         </div>
       </div>
@@ -816,7 +817,7 @@ function HotMarketsPanel({ onZipClick }) {
         </div>
       )}
 
-      {view === 'greenfield' && (
+      {view === 'whitespace' && (
         <div className="hot-markets-body">
           <div className="hot-markets-desc">Zips with high availability and no active Buying Center — untapped markets for new BC placement.</div>
           <table className="hot-table">
@@ -874,6 +875,133 @@ function TenureInsight({ tenure }) {
   )
 }
 
+
+
+// ── Inline Market Intelligence (shown after Check result) ─────────────────
+function MarketIntelligenceInline({ zip, dma, av }) {
+  const [expanded, setExpanded] = useState(false)
+  const sc = coordsMap[zip]
+
+  // DMA rank
+  const allAvail = Object.entries(dmaSaturation)
+    .sort((a,b) => b[1].avail - a[1].avail)
+  const dmaRank = allAvail.findIndex(([d]) => d === dma) + 1
+  const totalDmas = allAvail.length
+  const dmaStats = dmaSaturation[dma] || {}
+  const isOverAlloc = dmaStats.avail < 0
+  const rankPct = Math.round((dmaRank / totalDmas) * 100)
+
+  // Whitespace zips within 45mi (from precomputed list)
+  const nearbyWhitespace = whitespaceZips
+    .filter(w => {
+      if (!sc || !w.lat || !w.lon) return false
+      return haversine(sc[0], sc[1], w.lat, w.lon) <= 45
+    })
+    .slice(0, 5)
+
+  // DMA health label
+  const dmaHealth = dmaRank <= 30 ? { label: 'High Capacity', color: 'var(--green)', icon: '🟢' }
+    : dmaRank <= 100 ? { label: 'Moderate Capacity', color: '#c8860a', icon: '🟡' }
+    : { label: 'Constrained Market', color: 'var(--red)', icon: '🔴' }
+
+  return (
+    <div className="mkt-inline-panel">
+      <div className="mkt-inline-header" onClick={() => setExpanded(e => !e)}>
+        <div className="mkt-inline-title">📊 Market Intelligence</div>
+        <div className="mkt-inline-chips">
+          <span className="mkt-chip" style={{color: dmaHealth.color, borderColor: dmaHealth.color + '40', background: dmaHealth.color + '10'}}>
+            {dmaHealth.icon} {dma} — {dmaHealth.label} (#{dmaRank} of {totalDmas} DMAs)
+          </span>
+          {nearbyWhitespace.length > 0 && (
+            <span className="mkt-chip mkt-chip-white">
+              ✨ {nearbyWhitespace.length} whitespace zip{nearbyWhitespace.length > 1 ? 's' : ''} within 45mi
+            </span>
+          )}
+          {av.hasUnderdeliveryWarning && (
+            <span className="mkt-chip mkt-chip-warn">⚠ Underdelivery risk nearby</span>
+          )}
+        </div>
+        <div className="mkt-inline-toggle">{expanded ? '▲' : '▼'}</div>
+      </div>
+
+      {expanded && (
+        <div className="mkt-inline-body">
+          <div className="mkt-inline-grid">
+
+            {/* DMA Position */}
+            <div className="mkt-intel-card">
+              <div className="mkt-intel-card-title">DMA Market Position</div>
+              <div className="mkt-intel-card-val" style={{color: dmaHealth.color}}>
+                #{dmaRank} <span style={{fontSize:13,fontWeight:400,color:'var(--muted)'}}>of {totalDmas}</span>
+              </div>
+              <div className="mkt-intel-card-sub">by available leads nationally</div>
+              <div className="mkt-intel-divider" />
+              <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5}}>
+                <strong>{dma}</strong> has <span style={{color: isOverAlloc ? 'var(--red)' : 'var(--green)', fontWeight:600}}>{fmtN(dmaStats.avail)}</span> leads {isOverAlloc ? 'over-allocated' : 'available'} across {dmaStats.dealers} active BCs with {fmtN(dmaStats.target)} leads/mo allocated.
+              </div>
+            </div>
+
+            {/* Whitespace Opportunities */}
+            <div className="mkt-intel-card">
+              <div className="mkt-intel-card-title">✨ Whitespace Within 45mi</div>
+              {nearbyWhitespace.length > 0 ? (
+                <table className="mkt-mini-table">
+                  <thead><tr><th>Zip</th><th>City</th><th className="th-r">Avail</th><th className="th-r">Dist</th></tr></thead>
+                  <tbody>
+                    {nearbyWhitespace.map(w => (
+                      <tr key={w.zip}>
+                        <td className="td-mono">{w.zip}</td>
+                        <td style={{fontSize:11}}>{w.city}, {w.state}</td>
+                        <td className="td-right avail-pos td-num">{fmtN(w.avail)}</td>
+                        <td className="td-right td-dim" style={{fontSize:11}}>{
+                          sc ? haversine(sc[0],sc[1],w.lat,w.lon).toFixed(1)+'mi' : '—'
+                        }</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div style={{fontSize:12,color:'var(--muted)',marginTop:8}}>No whitespace zips within 45 miles — fully developed market.</div>
+              )}
+            </div>
+
+            {/* Competing Over-Allocated Zips */}
+            <div className="mkt-intel-card">
+              <div className="mkt-intel-card-title">🔴 Competing Pressure Within 30mi</div>
+              <div style={{fontSize:11,color:'var(--muted)',marginBottom:8,lineHeight:1.4}}>Over-allocated BC zips nearby — their deficits compete with the same consumer pool.</div>
+              {(() => {
+                if (!sc) return <div style={{fontSize:12,color:'var(--muted)'}}>No coordinate data.</div>
+                const competing = Object.keys(dmaSaturation).length > 0
+                  ? av.ring15.concat(av.ring30)
+                      .filter(e => e.rawAvail < 0 && e.hasBC)
+                      .sort((a,b) => a.avail - b.avail)
+                      .slice(0, 5)
+                  : []
+                if (!competing.length) return <div style={{fontSize:12,color:'var(--green)'}}>✓ No significantly over-allocated BCs within 30 miles.</div>
+                return (
+                  <table className="mkt-mini-table">
+                    <thead><tr><th>Zip</th><th>Dealer</th><th className="th-r">Deficit</th><th className="th-r">Dist</th></tr></thead>
+                    <tbody>
+                      {competing.map(e => (
+                        <tr key={e.zip}>
+                          <td className="td-mono">{e.zip}</td>
+                          <td style={{fontSize:11,maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.name}</td>
+                          <td className="td-right avail-neg td-num">{fmtN(e.rawAvail)}</td>
+                          <td className="td-right td-dim" style={{fontSize:11}}>{e.dist}mi</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )
+              })()}
+            </div>
+
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ── Enhancement: Tenure insight for searched zip's dealer ────────────────
 function TenureInsightForZip({ dma, searchZip }) {
