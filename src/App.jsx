@@ -1138,7 +1138,25 @@ function MarketIntelligenceInline({ zip, dma, av }) {
   const isOverAlloc = dmaStats.avail < 0
   const rankPct = Math.round((dmaRank / totalDmas) * 100)
 
-  // Whitespace now computed on-the-fly in the card below (not from precomputed list)
+  // Whitespace zips within 45mi — memoized so it only runs when zip changes, not every render
+  const nearbyWhitespace = React.useMemo(() => {
+    if (!sc) return []
+    const nearby = []
+    const keys = Object.keys(matMap)
+    for (let i = 0; i < keys.length; i++) {
+      const z = keys[i]
+      const mr = matMap[z]
+      if (mr[3] !== null && mr[3] !== undefined) continue // has BC
+      const av2 = mr[4]
+      if (!av2 || av2 <= 0) continue
+      const zc = coordsMap[z]
+      if (!zc) continue
+      const dist = haversine(sc[0], sc[1], zc[0], zc[1])
+      if (dist <= 45) nearby.push({ zip:z, city:mr[0], state:mr[1], avail:av2, dist:Math.round(dist*10)/10 })
+    }
+    nearby.sort((a,b) => b.avail - a.avail)
+    return nearby
+  }, [zip])
 
   // DMA health label
   const dmaHealth = dmaRank <= 30 ? { label: 'High Capacity', color: 'var(--green)', icon: '🟢' }
@@ -1182,48 +1200,29 @@ function MarketIntelligenceInline({ zip, dma, av }) {
               </div>
             </div>
 
-            {/* Whitespace Opportunities — computed directly from matMap */}
+            {/* Whitespace Opportunities — from useMemo above */}
             <div className="mkt-intel-card">
               <div className="mkt-intel-card-title">✨ Whitespace Within 45mi</div>
-              {(() => {
-                if (!sc) return <div style={{fontSize:12,color:'var(--muted)'}}>No coordinate data.</div>
-                // Compute on the fly from matMap — accurate for any zip, not limited to global top 100
-                const nearby = []
-                const keys = Object.keys(matMap)
-                for (let i = 0; i < keys.length; i++) {
-                  const z = keys[i]
-                  const mr = matMap[z]
-                  if (mr[3] !== null && mr[3] !== undefined) continue // has BC — skip
-                  const av = mr[4]
-                  if (!av || av <= 0) continue
-                  const zc = coordsMap[z]
-                  if (!zc) continue
-                  const dist = haversine(sc[0], sc[1], zc[0], zc[1])
-                  if (dist <= 45) nearby.push({ zip:z, city:mr[0], state:mr[1], avail:av, dist:Math.round(dist*10)/10 })
-                }
-                nearby.sort((a,b) => b.avail - a.avail)
-                const top5 = nearby.slice(0, 5)
-                return top5.length > 0 ? (
-                  <>
-                    <div style={{fontSize:11,color:'var(--muted)',marginBottom:6}}>{nearby.length} whitespace zips found within 45mi</div>
-                    <table className="mkt-mini-table">
-                      <thead><tr><th>Zip</th><th>City</th><th className="th-r">Avail</th><th className="th-r">Dist</th></tr></thead>
-                      <tbody>
-                        {top5.map(w => (
-                          <tr key={w.zip}>
-                            <td className="td-mono">{w.zip}</td>
-                            <td style={{fontSize:11}}>{w.city}, {w.state}</td>
-                            <td className="td-right avail-pos td-num">{fmtN(w.avail)}</td>
-                            <td className="td-right td-dim" style={{fontSize:11}}>{w.dist}mi</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </>
-                ) : (
-                  <div style={{fontSize:12,color:'var(--muted)',marginTop:8}}>No whitespace zips within 45 miles — fully developed market.</div>
-                )
-              })()}
+              {nearbyWhitespace.length > 0 ? (
+                <>
+                  <div style={{fontSize:11,color:'var(--muted)',marginBottom:6}}>{nearbyWhitespace.length} whitespace zips found</div>
+                  <table className="mkt-mini-table">
+                    <thead><tr><th>Zip</th><th>City</th><th className="th-r">Avail</th><th className="th-r">Dist</th></tr></thead>
+                    <tbody>
+                      {nearbyWhitespace.slice(0,5).map(w => (
+                        <tr key={w.zip}>
+                          <td className="td-mono">{w.zip}</td>
+                          <td style={{fontSize:11}}>{w.city}, {w.state}</td>
+                          <td className="td-right avail-pos td-num">{fmtN(w.avail)}</td>
+                          <td className="td-right td-dim" style={{fontSize:11}}>{w.dist}mi</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              ) : (
+                <div style={{fontSize:12,color:'var(--muted)',marginTop:8}}>No whitespace zips within 45 miles.</div>
+              )}
             </div>
 
             {/* Competing Over-Allocated Zips */}
