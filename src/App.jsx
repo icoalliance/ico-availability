@@ -241,16 +241,33 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName }) {
     </div>
   )
 
+  // Get existing active reservations for this zip with full details
+  const existingReservations = reserved.filter(r => r.zip === zipInfo.zip && r.status === 'active')
+  const [confirmingDuplicate, setConfirmingDuplicate] = useState(false)
+
   return (
     <div className="reserve-box">
       <div className="reserve-title">Reserve Leads</div>
-      {totalReservedHere > 0 && (
-        <div className="reserve-existing">
-          {fmtN(totalReservedHere)} leads already reserved in this zip
+
+      {existingReservations.length > 0 && (
+        <div className="reserve-existing-detail">
+          <div className="reserve-existing-title">⚠ Existing reservations in this zip:</div>
+          {existingReservations.map(r => (
+            <div key={r.id} className="reserve-existing-row">
+              <span className="reserve-existing-dealer">{r.dealerName}</span>
+              <span className="reserve-existing-leads">{fmtN(r.leadsReserved)} leads</span>
+              <span className="reserve-existing-by">by {r.reservedBy}</span>
+              <span className="reserve-existing-exp">exp {fmtDate(r.expiresAt)}</span>
+            </div>
+          ))}
+          <div style={{fontSize:11,color:'#92400e',marginTop:6}}>
+            Total already reserved: <strong>{fmtN(totalReservedHere)} leads</strong>
+          </div>
         </div>
       )}
+
       <label className="reserve-check-label">
-        <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} />
+        <input type="checkbox" checked={checked} onChange={e => { setChecked(e.target.checked); setConfirmingDuplicate(false) }} />
         Reserve {desired ? fmtN(desired) : ''} leads for this zip
       </label>
 
@@ -273,10 +290,25 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName }) {
           <div className="reserve-expiry-note">
             Reservation expires in 14 days — <strong>{expires.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</strong>
           </div>
-          {error && <div style={{color:'var(--red)',fontSize:12,marginBottom:8}}>{error}</div>}
-          <button className="reserve-submit-btn" onClick={submit} disabled={loading}>
-            {loading ? 'Saving…' : 'Confirm Reservation'}
-          </button>
+
+          {existingReservations.length > 0 && !confirmingDuplicate && (
+            <div className="reserve-duplicate-warning">
+              <strong>This zip already has {fmtN(totalReservedHere)} leads reserved.</strong> Are you sure you want to add another reservation for a different dealer?
+              <div style={{display:'flex',gap:8,marginTop:8}}>
+                <button className="reserve-submit-btn" style={{background:'#c8860a'}} onClick={() => setConfirmingDuplicate(true)}>Yes, add another reservation</button>
+                <button className="reserve-submit-btn" style={{background:'var(--bg)',color:'var(--text)',border:'1px solid var(--border)'}} onClick={() => { setChecked(false); setConfirmingDuplicate(false) }}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {(existingReservations.length === 0 || confirmingDuplicate) && (
+            <>
+              {error && <div style={{color:'var(--red)',fontSize:12,marginBottom:8}}>{error}</div>}
+              <button className="reserve-submit-btn" onClick={submit} disabled={loading}>
+                {loading ? 'Saving…' : 'Confirm Reservation'}
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -1106,13 +1138,7 @@ function MarketIntelligenceInline({ zip, dma, av }) {
   const isOverAlloc = dmaStats.avail < 0
   const rankPct = Math.round((dmaRank / totalDmas) * 100)
 
-  // Whitespace zips within 45mi (from precomputed list)
-  const nearbyWhitespace = whitespaceZips
-    .filter(w => {
-      if (!sc || !w.lat || !w.lon) return false
-      return haversine(sc[0], sc[1], w.lat, w.lon) <= 45
-    })
-    .slice(0, 5)
+  // Whitespace now computed on-the-fly in the card below (not from precomputed list)
 
   // DMA health label
   const dmaHealth = dmaRank <= 30 ? { label: 'High Capacity', color: 'var(--green)', icon: '🟢' }
@@ -1156,28 +1182,48 @@ function MarketIntelligenceInline({ zip, dma, av }) {
               </div>
             </div>
 
-            {/* Whitespace Opportunities */}
+            {/* Whitespace Opportunities — computed directly from matMap */}
             <div className="mkt-intel-card">
               <div className="mkt-intel-card-title">✨ Whitespace Within 45mi</div>
-              {nearbyWhitespace.length > 0 ? (
-                <table className="mkt-mini-table">
-                  <thead><tr><th>Zip</th><th>City</th><th className="th-r">Avail</th><th className="th-r">Dist</th></tr></thead>
-                  <tbody>
-                    {nearbyWhitespace.map(w => (
-                      <tr key={w.zip}>
-                        <td className="td-mono">{w.zip}</td>
-                        <td style={{fontSize:11}}>{w.city}, {w.state}</td>
-                        <td className="td-right avail-pos td-num">{fmtN(w.avail)}</td>
-                        <td className="td-right td-dim" style={{fontSize:11}}>{
-                          sc ? haversine(sc[0],sc[1],w.lat,w.lon).toFixed(1)+'mi' : '—'
-                        }</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div style={{fontSize:12,color:'var(--muted)',marginTop:8}}>No whitespace zips within 45 miles — fully developed market.</div>
-              )}
+              {(() => {
+                if (!sc) return <div style={{fontSize:12,color:'var(--muted)'}}>No coordinate data.</div>
+                // Compute on the fly from matMap — accurate for any zip, not limited to global top 100
+                const nearby = []
+                const keys = Object.keys(matMap)
+                for (let i = 0; i < keys.length; i++) {
+                  const z = keys[i]
+                  const mr = matMap[z]
+                  if (mr[3] !== null && mr[3] !== undefined) continue // has BC — skip
+                  const av = mr[4]
+                  if (!av || av <= 0) continue
+                  const zc = coordsMap[z]
+                  if (!zc) continue
+                  const dist = haversine(sc[0], sc[1], zc[0], zc[1])
+                  if (dist <= 45) nearby.push({ zip:z, city:mr[0], state:mr[1], avail:av, dist:Math.round(dist*10)/10 })
+                }
+                nearby.sort((a,b) => b.avail - a.avail)
+                const top5 = nearby.slice(0, 5)
+                return top5.length > 0 ? (
+                  <>
+                    <div style={{fontSize:11,color:'var(--muted)',marginBottom:6}}>{nearby.length} whitespace zips found within 45mi</div>
+                    <table className="mkt-mini-table">
+                      <thead><tr><th>Zip</th><th>City</th><th className="th-r">Avail</th><th className="th-r">Dist</th></tr></thead>
+                      <tbody>
+                        {top5.map(w => (
+                          <tr key={w.zip}>
+                            <td className="td-mono">{w.zip}</td>
+                            <td style={{fontSize:11}}>{w.city}, {w.state}</td>
+                            <td className="td-right avail-pos td-num">{fmtN(w.avail)}</td>
+                            <td className="td-right td-dim" style={{fontSize:11}}>{w.dist}mi</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                ) : (
+                  <div style={{fontSize:12,color:'var(--muted)',marginTop:8}}>No whitespace zips within 45 miles — fully developed market.</div>
+                )
+              })()}
             </div>
 
             {/* Competing Over-Allocated Zips */}
