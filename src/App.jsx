@@ -744,23 +744,12 @@ export default function App() {
     if (!info) { setError(`Zip code ${z} was not found in the current dataset.`); return }
     const av = calcAvailability(z, reservations)
     const des = desired ? parseInt(desired, 10) : null
-    // Compute nearby whitespace here (not in render) — avoids blocking the browser
-    const whitespace = []
-    if (sc) {
-      const wkeys = Object.keys(matMap)
-      for (let i = 0; i < wkeys.length; i++) {
-        const wz = wkeys[i]
-        const wm = matMap[wz]
-        if (wm[3] !== null && wm[3] !== undefined) continue
-        const wav = wm[4]
-        if (!wav || wav <= 0) continue
-        const wzc = coordsMap[wz]
-        if (!wzc) continue
-        const wdist = haversine(sc[0], sc[1], wzc[0], wzc[1])
-        if (wdist <= 45) whitespace.push({ zip:wz, city:wm[0], state:wm[1], avail:wav, dist:Math.round(wdist*10)/10 })
-      }
-      whitespace.sort((a,b) => b.avail - a.avail)
-    }
+    // Compute nearby whitespace from precomputed top-2000 list (fast — no 40k loop)
+    const whitespace = sc ? whitespaceZips
+      .map(w => ({ ...w, dist: Math.round(haversine(sc[0], sc[1], w.lat, w.lon) * 10) / 10 }))
+      .filter(w => w.dist <= 45)
+      .sort((a, b) => b.avail - a.avail)
+      : []
     setResult({ info, av, desired: des, whitespace })
     // Save to recent searches (enhancement 5)
     setRecentZips(prev => {
