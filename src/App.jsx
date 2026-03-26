@@ -744,7 +744,24 @@ export default function App() {
     if (!info) { setError(`Zip code ${z} was not found in the current dataset.`); return }
     const av = calcAvailability(z, reservations)
     const des = desired ? parseInt(desired, 10) : null
-    setResult({ info, av, desired: des })
+    // Compute nearby whitespace here (not in render) — avoids blocking the browser
+    const whitespace = []
+    if (sc) {
+      const wkeys = Object.keys(matMap)
+      for (let i = 0; i < wkeys.length; i++) {
+        const wz = wkeys[i]
+        const wm = matMap[wz]
+        if (wm[3] !== null && wm[3] !== undefined) continue
+        const wav = wm[4]
+        if (!wav || wav <= 0) continue
+        const wzc = coordsMap[wz]
+        if (!wzc) continue
+        const wdist = haversine(sc[0], sc[1], wzc[0], wzc[1])
+        if (wdist <= 45) whitespace.push({ zip:wz, city:wm[0], state:wm[1], avail:wav, dist:Math.round(wdist*10)/10 })
+      }
+      whitespace.sort((a,b) => b.avail - a.avail)
+    }
+    setResult({ info, av, desired: des, whitespace })
     // Save to recent searches (enhancement 5)
     setRecentZips(prev => {
       const next = [{ zip: z, city: info.city, state: info.state }, ...prev.filter(r => r.zip !== z)].slice(0, 8)
@@ -960,7 +977,7 @@ export default function App() {
                 <div className="rec-body" dangerouslySetInnerHTML={{__html: recText}} />
               </div>
 
-              <MarketIntelligenceInline zip={info.zip} dma={info.dma} av={av} />
+              <MarketIntelligenceInline zip={info.zip} dma={info.dma} av={av} nearbyWhitespace={result.whitespace || []} />
               <AvailCards av={av} desired={des} />
 
               {des && (
@@ -1125,7 +1142,7 @@ function TenureInsight({ tenure }) {
 
 
 // ── Inline Market Intelligence (shown after Check result) ─────────────────
-function MarketIntelligenceInline({ zip, dma, av }) {
+function MarketIntelligenceInline({ zip, dma, av, nearbyWhitespace }) {
   const [expanded, setExpanded] = useState(false)
   const sc = coordsMap[zip]
 
@@ -1138,25 +1155,7 @@ function MarketIntelligenceInline({ zip, dma, av }) {
   const isOverAlloc = dmaStats.avail < 0
   const rankPct = Math.round((dmaRank / totalDmas) * 100)
 
-  // Whitespace zips within 45mi — memoized so it only runs when zip changes, not every render
-  const nearbyWhitespace = React.useMemo(() => {
-    if (!sc) return []
-    const nearby = []
-    const keys = Object.keys(matMap)
-    for (let i = 0; i < keys.length; i++) {
-      const z = keys[i]
-      const mr = matMap[z]
-      if (mr[3] !== null && mr[3] !== undefined) continue // has BC
-      const av2 = mr[4]
-      if (!av2 || av2 <= 0) continue
-      const zc = coordsMap[z]
-      if (!zc) continue
-      const dist = haversine(sc[0], sc[1], zc[0], zc[1])
-      if (dist <= 45) nearby.push({ zip:z, city:mr[0], state:mr[1], avail:av2, dist:Math.round(dist*10)/10 })
-    }
-    nearby.sort((a,b) => b.avail - a.avail)
-    return nearby
-  }, [zip])
+  // nearbyWhitespace passed as prop — computed in handleCheck alongside calcAvailability
 
   // DMA health label
   const dmaHealth = dmaRank <= 30 ? { label: 'High Capacity', color: 'var(--green)', icon: '🟢' }
