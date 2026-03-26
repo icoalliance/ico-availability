@@ -571,21 +571,42 @@ export default function App() {
   }
 
   // Determine verdict
+  // Rules:
+  // APPROVED: base covers request on its own
+  // APPROVABLE: inner ring (0-15 or 15-30mi) covers request AND overage is <= 1.5x that ring
+  // REVIEW REQUIRED: only outer ring (30-45mi) covers, OR overage is large, OR underdelivery
+  // DENIED: no ring covers the request
   let verdict = null, vClass = 'caution', vIcon = '~'
   if (result) {
     const { base, best15, best30, best45, hasUnderdeliveryWarning } = result.av
     const des = result.desired
-    if (base === null)         { verdict='UNKNOWN';    vClass='caution'; vIcon='?' }
-    else if (des !== null) {
-      if (base >= des)         { verdict='APPROVED';   vClass='approve'; vIcon='✓' }
-      else if (best15 >= des)  { verdict=hasUnderdeliveryWarning?'CAUTION':'APPROVABLE'; vClass='caution'; vIcon='~' }
-      else if (best30 >= des)  { verdict=hasUnderdeliveryWarning?'CAUTION':'APPROVABLE'; vClass='caution'; vIcon='~' }
-      else if (best45 >= des)  { verdict=hasUnderdeliveryWarning?'CAUTION':'APPROVABLE'; vClass='caution'; vIcon='~' }
-      else                     { verdict='DENIED';     vClass='deny';    vIcon='✗' }
+    const baseOverage = base !== null && base < 0 ? Math.abs(base) : 0
+
+    if (base === null) {
+      verdict='UNKNOWN'; vClass='caution'; vIcon='?'
+    } else if (des !== null) {
+      if (base !== null && base > 0 && base >= des) {
+        verdict='APPROVED'; vClass='approve'; vIcon='✓'
+      } else if (best15 < des && best30 < des && best45 < des) {
+        verdict='DENIED'; vClass='deny'; vIcon='✗'
+      } else if (hasUnderdeliveryWarning) {
+        verdict='REVIEW REQUIRED'; vClass='caution'; vIcon='~'
+      } else {
+        // Which ring covers the request?
+        const bestCovering = best15 >= des ? best15 : best30 >= des ? best30 : best45
+        const coveringRing = best15 >= des ? 15 : best30 >= des ? 30 : 45
+        const overageRatio = bestCovering > 0 ? baseOverage / bestCovering : Infinity
+        const innerEmpty = best15 === 0 && best30 === 0
+        if (coveringRing <= 30 && overageRatio <= 1.5) {
+          verdict='APPROVABLE'; vClass='caution'; vIcon='~'
+        } else {
+          verdict='REVIEW REQUIRED'; vClass='caution'; vIcon='~'
+        }
+      }
     } else {
-      if (base > 0)            { verdict='AVAILABLE';  vClass='approve'; vIcon='✓' }
-      else if (best15 > 0)     { verdict=hasUnderdeliveryWarning?'CAUTION':'BOOSTABLE'; vClass='caution'; vIcon='~' }
-      else                     { verdict='OVERSOLD';   vClass='deny';    vIcon='✗' }
+      if (base > 0)        { verdict='AVAILABLE';  vClass='approve'; vIcon='✓' }
+      else if (best15 > 0) { verdict=hasUnderdeliveryWarning?'REVIEW REQUIRED':'BOOSTABLE'; vClass='caution'; vIcon='~' }
+      else                 { verdict='OVERSOLD';   vClass='deny';    vIcon='✗' }
     }
   }
 
@@ -679,8 +700,8 @@ export default function App() {
             if (base >= des)          recText = `Zip ${info.zip} has <strong>${fmtN(base)} leads available</strong> in its own pool — enough to support your requested ${fmtN(des)} leads/mo. Approvable on base availability alone.`
             else if (av.best15 >= des) recText = `Base availability (${fmtN(base)}) is below your requested ${fmtN(des)}, but a neighboring zip within 15 miles has <strong>${fmtN(av.best15)} available</strong> — enough to justify approval with the 0–15 mi booster.`
             else if (av.best30 >= des) recText = `Base and 0–15 mi availability fall short, but a zip in the 15–30 mi band has <strong>${fmtN(av.best30)} available</strong> — a case can be made to ICO Ops.`
-            else if (av.best45 >= des) recText = `Extending to 45 miles finds <strong>${fmtN(av.best45)} available</strong>. ICO Ops would need to map the overlap to approve at this range.`
-            else                       recText = `Even at 45 miles, max nearby availability is <strong>${fmtN(av.best45)}</strong> — below your requested ${fmtN(des)}. Consider a smaller target or different zip.`
+            else if (av.best45 >= des) recText = `Only the 30–45 mi ring shows availability. With a base overage of ${fmtN(Math.abs(base))} and no inner-ring headroom, this requires <strong>manual ICO Ops review</strong> — not a standard approval. Submit with the booster zip and let Ops assess the radius overlap.`
+            else                       recText = `Even at 45 miles, max nearby availability is <strong>${fmtN(av.best45)}</strong> — below your requested ${fmtN(des)}. This market cannot support the request at this time.`
           } else {
             if (base > 0)             recText = `Zip ${info.zip} has <strong>${fmtN(base)} leads available</strong>. Enter a desired lead amount to check a specific request.`
             else if (av.best15 > 0)   recText = `Base is ${fmtN(base)}, but a nearby zip within 15 miles has <strong>${fmtN(av.best15)} available</strong>. A new BC may be approvable.`
