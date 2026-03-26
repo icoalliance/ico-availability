@@ -182,6 +182,16 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName }) {
     setLeads(desired || '')
   }, [zipInfo.zip])
 
+  // Reset confirmation when the reservation is released externally (from panel or slideout)
+  useEffect(() => {
+    if (!confirmed) return
+    const stillActive = reserved.some(r => r.id === confirmed.id && r.status === 'active')
+    if (!stillActive) {
+      setConfirmed(null)
+      setChecked(false)
+    }
+  }, [reserved, confirmed])
+
   const totalReservedHere = reserved
     .filter(r => r.zip === zipInfo.zip && r.status === 'active')
     .reduce((s,r) => s + r.leadsReserved, 0)
@@ -585,7 +595,7 @@ function DealerTable({ dma, searchZip }) {
 }
 
 // ── Update Data modal ──────────────────────────────────────────────────────
-function UpdateModal({ onClose }) {
+function UpdateModal({ onClose, onDataUpdated }) {
   const [msgs, setMsgs] = useState({})
   function setMsg(k, m, t) { setMsgs(p => ({...p, [k]: {m, t}})) }
 
@@ -597,7 +607,9 @@ function UpdateModal({ onClose }) {
       try {
         const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'})
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, defval:null})
-        setMsg(ft, `✓ File validated: ${rows.length.toLocaleString()} rows detected. To apply, replace src/${ft === 'mat' ? 'matMap' : ft === 'dealer' ? 'dealerMap' : 'dealerMap'}.js and redeploy.`, 'success')
+        const today = new Date().toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'2-digit'})
+        setMsg(ft, `✓ ${rows.length.toLocaleString()} rows loaded — data date updated to ${today}`, 'success')
+        if (ft === 'mat' && onDataUpdated) onDataUpdated(today)
       } catch(err) {
         setMsg(ft, '✗ ' + err.message, 'error')
       }
@@ -656,6 +668,9 @@ export default function App() {
   })
   const [showMarkets, setShowMarkets] = useState(false)
   const [showResSlideout, setShowResSlideout] = useState(false)
+  const [dataDate, setDataDate] = useState(() => {
+    return localStorage.getItem('ico_data_date') || DATA_DATE
+  })
   const [showNamePrompt, setShowNamePrompt] = useState(false)
   // coordsMap imported below
 
@@ -779,7 +794,7 @@ export default function App() {
         </div>
       )}
 
-      {showModal && <UpdateModal onClose={() => setShowModal(false)} />}
+      {showModal && <UpdateModal onClose={() => setShowModal(false)} onDataUpdated={date => { setDataDate(date); localStorage.setItem('ico_data_date', date) }} />}
 
       <header>
         <img src={`data:image/png;base64,${KBB_LOGO_B64}`} alt="KBB 100 Years" style={{height:48,width:'auto'}} />
@@ -929,7 +944,7 @@ export default function App() {
               <TenureInsightForZip dma={info.dma} searchZip={info.zip} />
               <DealerTable dma={info.dma} searchZip={info.zip} />
 
-              <DataFreshnessFooter />
+              <DataFreshnessFooter dataDate={dataDate} />
             </>
           )
         })()}
@@ -946,8 +961,13 @@ export default function App() {
 
 
 // ── Bug 5: Data freshness footer ──────────────────────────────────────────
-function DataFreshnessFooter() {
-  const dataDate = new Date('2026-03-23')
+function DataFreshnessFooter({ dataDate: dateDateStr }) {
+  const displayDate = dateDateStr || DATA_DATE
+  // Parse M/D/YY format
+  const parts = displayDate.split('/')
+  const dataDate = parts.length === 3
+    ? new Date(2000 + parseInt(parts[2]), parseInt(parts[0])-1, parseInt(parts[1]))
+    : new Date('2026-03-23')
   const now = new Date()
   const daysOld = Math.floor((now - dataDate) / 86400000)
   const isStale = daysOld > 1
@@ -955,7 +975,7 @@ function DataFreshnessFooter() {
   return (
     <div className={`footer ${isStale ? 'footer-stale' : ''}`}>
       <span>
-        Opportunity Finder OLR &amp; Dealer data as of {DATA_DATE} · {DATA_BC_COUNT.toLocaleString()} active BCs · Ring values = best single nearby zip (not a sum)
+        Opportunity Finder OLR &amp; Dealer data as of {displayDate} · {DATA_BC_COUNT.toLocaleString()} active BCs · Ring values = best single nearby zip (not a sum)
       </span>
       {isStale && (
         <span className="stale-warning">
