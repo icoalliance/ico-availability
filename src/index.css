@@ -263,3 +263,37 @@ main { max-width: 1100px; margin: 28px auto; padding: 0 20px; }
 
 /* ── Rebrand header ── */
 header h1 { font-family:var(--cond); font-weight:700; font-size:20px; color:#fff; border-left:1px solid rgba(255,255,255,.2); padding-left:16px; letter-spacing:.5px; }
+
+/* REVIEW REQUIRED badge — smaller text to fit */
+.badge-caution .badge-label { font-size:8px; letter-spacing:.5px; }
+
+/* ── Reservation Slideout ── */
+.res-status-btn { background:none; border:none; color:rgba(255,255,255,.5); font-family:var(--mono); font-size:11px; cursor:pointer; padding:0; text-decoration:underline; text-underline-offset:3px; }
+.res-status-btn:hover { color:var(--gold); }
+.slideout-overlay { position:fixed; inset:0; background:rgba(0,0,20,.6); z-index:500; display:flex; justify-content:flex-end; }
+.slideout-panel { background:var(--card); width:760px; max-width:95vw; height:100vh; overflow-y:auto; display:flex; flex-direction:column; box-shadow:-8px 0 40px rgba(0,0,0,.2); animation:slideIn .2s ease; }
+@keyframes slideIn { from { transform:translateX(100%); } to { transform:translateX(0); } }
+.slideout-header { background:var(--navy); padding:20px 24px; display:flex; justify-content:space-between; align-items:flex-start; flex-shrink:0; }
+.slideout-title { font-family:var(--cond); font-weight:700; font-size:20px; color:#fff; }
+.slideout-sub { font-family:var(--mono); font-size:11px; color:rgba(255,255,255,.4); margin-top:4px; }
+.slideout-close { background:rgba(255,255,255,.1); border:none; color:#fff; width:32px; height:32px; border-radius:6px; font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.slideout-close:hover { background:rgba(255,255,255,.2); }
+.slideout-dma-filter { padding:16px 24px; border-bottom:1px solid var(--border); background:#f8f9fc; flex-shrink:0; }
+.slideout-filter-label { font-family:var(--cond); font-weight:700; font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); margin-bottom:10px; }
+.slideout-dma-pills { display:flex; flex-wrap:wrap; gap:6px; }
+.dma-pill { background:var(--card); border:1px solid var(--border); border-radius:5px; padding:5px 10px; font-family:var(--cond); font-weight:700; font-size:11px; cursor:pointer; color:var(--text); display:flex; align-items:center; gap:6px; }
+.dma-pill:hover { border-color:var(--navy); color:var(--navy); }
+.dma-pill-active { background:var(--navy); border-color:var(--navy); color:#fff; }
+.dma-pill-count { background:rgba(255,255,255,.2); border-radius:3px; padding:1px 5px; font-size:10px; }
+.dma-pill:not(.dma-pill-active) .dma-pill-count { background:var(--bg); color:var(--muted); }
+.slideout-summary { padding:14px 24px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:20px; background:#fff; flex-shrink:0; flex-wrap:wrap; }
+.slideout-summary-stat { text-align:center; }
+.slideout-summary-val { font-family:var(--mono); font-size:22px; font-weight:500; color:var(--navy); }
+.slideout-summary-label { font-family:var(--cond); font-weight:700; font-size:9px; letter-spacing:1px; text-transform:uppercase; color:var(--muted); }
+.slideout-summary-sellers { display:flex; gap:6px; flex-wrap:wrap; flex:1; justify-content:flex-end; }
+.slideout-body { padding:20px 24px; flex:1; }
+.slideout-empty { font-size:13px; color:var(--muted); padding:20px 0; text-align:center; }
+.slideout-table { font-size:12px; }
+/* 4-col market intel grid */
+@media (max-width:1000px) { .mkt-inline-grid { grid-template-columns:repeat(2,1fr) !important; } }
+@media (max-width:600px) { .mkt-inline-grid { grid-template-columns:1fr !important; } }

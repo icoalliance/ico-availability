@@ -14,6 +14,7 @@ export default defineConfig({
           'data-dealer': ['./src/dealerMap.js'],
           'data-logo':   ['./src/kbbLogo.js'],
           'data-market': ['./src/marketData.js'],
+          'data-offers': ['./src/offerMap.js'],
           'vendor':      ['react', 'react-dom', 'xlsx'],
         }
       }

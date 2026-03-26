@@ -7,6 +7,7 @@ import { KBB_LOGO_B64 } from './kbbLogo'
 import { coordsMap } from './coordsMap'
 import { haversine } from './utils'
 import { whitespaceZips, dmaSaturation, DATA_DATE, DATA_BC_COUNT } from './marketData'
+import { offerMap, OFFER_MONTH } from './offerMap'
 
 // ── Small helpers ──────────────────────────────────────────────────────────
 const pctClass = p => !p ? '' : p >= 1 ? 'pct-green' : p >= 0.75 ? 'pct-yellow' : 'pct-red'
@@ -171,6 +172,16 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName }) {
   const [confirmed, setConfirmed] = useState(null)
   const [error, setError] = useState('')
 
+  // Reset confirmation when zip changes
+  useEffect(() => {
+    setConfirmed(null)
+    setChecked(false)
+    setDealer('')
+    setNotes('')
+    setError('')
+    setLeads(desired || '')
+  }, [zipInfo.zip])
+
   const totalReservedHere = reserved
     .filter(r => r.zip === zipInfo.zip && r.status === 'active')
     .reduce((s,r) => s + r.leadsReserved, 0)
@@ -258,6 +269,150 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName }) {
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+
+// ── Reservation Slideout — DMA filtered view ─────────────────────────────
+function ReservationSlideout({ reservations, onCancel, onClose, onRefresh }) {
+  const active = reservations.filter(r => r.status === 'active')
+  const expired = reservations.filter(r => r.status === 'expired')
+
+  // Build DMA list from active reservations
+  const dmas = ['All DMAs', ...Array.from(new Set(active.map(r => r.dma).filter(Boolean))).sort()]
+  const [selectedDMA, setSelectedDMA] = useState('All DMAs')
+
+  const filtered = selectedDMA === 'All DMAs'
+    ? active
+    : active.filter(r => r.dma === selectedDMA)
+
+  // Summary stats for selected DMA
+  const totalLeads = filtered.reduce((s, r) => s + r.leadsReserved, 0)
+  const bySeller = filtered.reduce((acc, r) => {
+    acc[r.reservedBy] = (acc[r.reservedBy] || 0) + r.leadsReserved
+    return acc
+  }, {})
+
+  return (
+    <div className="slideout-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="slideout-panel">
+        <div className="slideout-header">
+          <div>
+            <div className="slideout-title">Active Reservations</div>
+            <div className="slideout-sub">{active.length} active across {dmas.length - 1} DMA{dmas.length > 2 ? 's' : ''}</div>
+          </div>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <button className="res-action-btn" onClick={onRefresh}>↻ Refresh</button>
+            <button className="slideout-close" onClick={onClose}>✕</button>
+          </div>
+        </div>
+
+        {/* DMA Filter */}
+        <div className="slideout-dma-filter">
+          <div className="slideout-filter-label">Filter by DMA</div>
+          <div className="slideout-dma-pills">
+            {dmas.map(dma => (
+              <button
+                key={dma}
+                className={`dma-pill ${selectedDMA === dma ? 'dma-pill-active' : ''}`}
+                onClick={() => setSelectedDMA(dma)}
+              >
+                {dma}
+                {dma !== 'All DMAs' && (
+                  <span className="dma-pill-count">
+                    {active.filter(r => r.dma === dma).length}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Summary strip */}
+        {filtered.length > 0 && (
+          <div className="slideout-summary">
+            <div className="slideout-summary-stat">
+              <div className="slideout-summary-val">{filtered.length}</div>
+              <div className="slideout-summary-label">reservations</div>
+            </div>
+            <div className="slideout-summary-stat">
+              <div className="slideout-summary-val">{fmtN(totalLeads)}</div>
+              <div className="slideout-summary-label">leads reserved</div>
+            </div>
+            <div className="slideout-summary-sellers">
+              {Object.entries(bySeller).sort((a,b) => b[1]-a[1]).map(([seller, leads]) => (
+                <span key={seller} className="res-seller-chip">{seller}: {fmtN(leads)}</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Reservation list */}
+        <div className="slideout-body">
+          {filtered.length === 0 ? (
+            <div className="slideout-empty">No active reservations{selectedDMA !== 'All DMAs' ? ` in ${selectedDMA}` : ''}.</div>
+          ) : (
+            <table className="dealer-table slideout-table">
+              <thead>
+                <tr>
+                  <th>Zip</th><th>Location</th><th className="th-r">Leads</th>
+                  <th>Dealer</th><th>Notes</th><th>Reserved By</th>
+                  <th>Expires</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(r => {
+                  const days = daysUntil(r.expiresAt)
+                  const urgency = days <= 3 ? 'res-urgent' : days <= 7 ? 'res-warn' : ''
+                  return (
+                    <tr key={r.id}>
+                      <td className="td-mono">{r.zip}</td>
+                      <td>{r.city}, {r.state}</td>
+                      <td className="td-right td-num"><strong>{fmtN(r.leadsReserved)}</strong></td>
+                      <td>{r.dealerName || '—'}</td>
+                      <td className="td-dim" style={{fontSize:11}}>{r.notes || '—'}</td>
+                      <td className="td-dim">{r.reservedBy || '—'}</td>
+                      <td className={urgency}>
+                        {fmtDate(r.expiresAt)}
+                        {days <= 7 && <span className="res-days"> ({days}d)</span>}
+                      </td>
+                      <td>
+                        <button className="res-cancel-btn" onClick={() => onCancel(r.id)}>
+                          Release
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+
+          {expired.length > 0 && (
+            <div style={{marginTop:16}}>
+              <div style={{fontFamily:'var(--cond)',fontWeight:700,fontSize:10,letterSpacing:'1px',textTransform:'uppercase',color:'var(--muted)',marginBottom:8}}>
+                Expired ({expired.length})
+              </div>
+              <table className="dealer-table slideout-table">
+                <thead><tr><th>Zip</th><th>Location</th><th className="th-r">Leads</th><th>Dealer</th><th>Reserved By</th><th>Expired</th></tr></thead>
+                <tbody>
+                  {expired.map(r => (
+                    <tr key={r.id} className="res-inactive">
+                      <td className="td-mono">{r.zip}</td>
+                      <td>{r.city}, {r.state}</td>
+                      <td className="td-right td-num">{fmtN(r.leadsReserved)}</td>
+                      <td>{r.dealerName || '—'}</td>
+                      <td className="td-dim">{r.reservedBy || '—'}</td>
+                      <td className="td-dim">{fmtDate(r.expiresAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -500,6 +655,7 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem('ico_recent_zips') || '[]') } catch { return [] }
   })
   const [showMarkets, setShowMarkets] = useState(false)
+  const [showResSlideout, setShowResSlideout] = useState(false)
   const [showNamePrompt, setShowNamePrompt] = useState(false)
   // coordsMap imported below
 
@@ -638,10 +794,28 @@ export default function App() {
       </header>
 
       <div className="import-bar">
-        <div id="importStatus" style={{fontSize:11,color:'rgba(255,255,255,.4)',fontFamily:'var(--mono)'}}>
-          {resLoading ? 'Loading reservations…' : `${reservations.filter(r=>r.status==='active').length} active reservation(s)`}
+        <div id="importStatus" style={{fontSize:11,fontFamily:'var(--mono)'}}>
+          {resLoading ? (
+            <span style={{color:'rgba(255,255,255,.4)'}}>Loading reservations…</span>
+          ) : (
+            <button
+              className="res-status-btn"
+              onClick={() => setShowResSlideout(true)}
+            >
+              {reservations.filter(r=>r.status==='active').length} active reservation(s) — click to view by DMA
+            </button>
+          )}
         </div>
       </div>
+
+      {showResSlideout && (
+        <ReservationSlideout
+          reservations={reservations}
+          onCancel={handleCancel}
+          onClose={() => setShowResSlideout(false)}
+          onRefresh={loadReservations}
+        />
+      )}
 
       <main>
         <div className="search-box">
@@ -1013,6 +1187,45 @@ function MarketIntelligenceInline({ zip, dma, av }) {
                       ))}
                     </tbody>
                   </table>
+                )
+              })()}
+            </div>
+
+            {/* Real Demand Card */}
+            <div className="mkt-intel-card">
+              <div className="mkt-intel-card-title">📊 Real Market Demand ({OFFER_MONTH})</div>
+              {(() => {
+                if (!sc) return <div style={{fontSize:12,color:'var(--muted)'}}>No coordinate data.</div>
+                // Sum offers within each radius
+                let o15=0, o30=0, o45=0
+                Object.entries(offerMap).forEach(([z, cnt]) => {
+                  const zc = coordsMap[z]
+                  if (!zc) return
+                  const dist = haversine(sc[0], sc[1], zc[0], zc[1])
+                  if (dist <= 15) o15 += cnt
+                  if (dist <= 30) o30 += cnt
+                  if (dist <= 45) o45 += cnt
+                })
+                const leads15 = Math.round(o15 * 2)
+                const leads30 = Math.round(o30 * 2)
+                const leads45 = Math.round(o45 * 2)
+                return (
+                  <div>
+                    <div style={{fontSize:11,color:'var(--muted)',marginBottom:10,lineHeight:1.4}}>
+                      Actual consumer offers in this market at 2x LPO:
+                    </div>
+                    <table className="mkt-mini-table">
+                      <thead><tr><th>Radius</th><th className="th-r">Offers</th><th className="th-r">Est. Leads</th></tr></thead>
+                      <tbody>
+                        <tr><td>0–15 mi</td><td className="td-right td-num">{fmtN(o15)}</td><td className="td-right avail-pos td-num">{fmtN(leads15)}</td></tr>
+                        <tr><td>0–30 mi</td><td className="td-right td-num">{fmtN(o30)}</td><td className="td-right avail-pos td-num">{fmtN(leads30)}</td></tr>
+                        <tr><td>0–45 mi</td><td className="td-right td-num">{fmtN(o45)}</td><td className="td-right avail-pos td-num">{fmtN(leads45)}</td></tr>
+                      </tbody>
+                    </table>
+                    <div style={{fontSize:11,color:'var(--muted)',marginTop:8,lineHeight:1.4}}>
+                      MAT uses 3x assumption. Real demand at 2x confirms actual capacity.
+                    </div>
+                  </div>
                 )
               })()}
             </div>
