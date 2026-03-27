@@ -745,6 +745,7 @@ export default function App() {
     const av = calcAvailability(z, reservations)
     const des = desired ? parseInt(desired, 10) : null
     // Compute nearby whitespace from precomputed top-2000 list (fast — no 40k loop)
+    const sc = coordsMap[z]
     const whitespace = sc ? whitespaceZips
       .map(w => ({ ...w, dist: Math.round(haversine(sc[0], sc[1], w.lat, w.lon) * 10) / 10 }))
       .filter(w => w.dist <= 45)
