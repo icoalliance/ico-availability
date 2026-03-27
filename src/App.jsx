@@ -980,6 +980,7 @@ export default function App() {
                 />
               )}
 
+              <MarketExtensionCard searchZip={info.zip} searchCoords={coordsMap[info.zip]} />
               <TenureInsightForZip dma={info.dma} searchZip={info.zip} />
               <DealerTable dma={info.dma} searchZip={info.zip} />
 
@@ -998,6 +999,127 @@ export default function App() {
   )
 }
 
+
+
+// ── Market Extension Pilot ────────────────────────────────────────────────
+const PILOT_MARKETS = [
+  {
+    id: 'boston',
+    name: 'Boston',
+    state: 'MA',
+    anchor: '02108',
+    lat: 42.3576,
+    lon: -71.0684,
+    description: 'Dense urban market with limited dealer presence. High consumer offer volume with significant untapped availability.',
+    pools: {
+      10: { zips: 118, avail: 476805, whitespace: 92, wAvail: 377679 },
+      15: { zips: 156, avail: 601147, whitespace: 117, wAvail: 460381 },
+      25: { zips: 258, avail: 790545, whitespace: 192, wAvail: 600477 },
+    }
+  },
+  {
+    id: 'nyc',
+    name: 'New York City',
+    state: 'NY',
+    anchor: '10001',
+    lat: 40.7484,
+    lon: -73.9967,
+    description: 'Largest urban market in the US. Extremely high offer volume with no physical space for traditional dealerships in the core.',
+    pools: {
+      10: { zips: 305, avail: 902484, whitespace: 0,  wAvail: 0 },
+      15: { zips: 443, avail: 1231832, whitespace: 0, wAvail: 0 },
+      25: { zips: 668, avail: 1652306, whitespace: 18, wAvail: 36150 },
+    }
+  }
+]
+
+const PILOT_RADIUS_MI = 50  // dealers within this radius are eligible
+
+function MarketExtensionCard({ searchZip, searchCoords }) {
+  const [selectedRadius, setSelectedRadius] = useState(15)
+
+  if (!searchCoords) return null
+
+  // Check if this zip is within 50mi of any pilot market
+  const eligible = PILOT_MARKETS.filter(m => {
+    const dist = haversine(searchCoords[0], searchCoords[1], m.lat, m.lon)
+    return dist <= PILOT_RADIUS_MI && dist > 0  // exclude if they ARE the anchor
+  }).map(m => ({
+    ...m,
+    distFromAnchor: Math.round(haversine(searchCoords[0], searchCoords[1], m.lat, m.lon) * 10) / 10
+  }))
+
+  if (eligible.length === 0) return null
+
+  return (
+    <div className="ext-panel">
+      <div className="ext-header">
+        <div className="ext-title-row">
+          <span className="ext-pilot-badge">PILOT</span>
+          <div className="ext-title">Market Extension Available</div>
+        </div>
+        <div className="ext-subtitle">
+          This zip is eligible to purchase leads from {eligible.length > 1 ? 'urban core markets' : 'an urban core market'} where physical dealership presence is limited. This is an ICO pilot program — contact your ICO Ops manager to participate.
+        </div>
+      </div>
+
+      <div className="ext-radius-selector">
+        <span className="ext-radius-label">Urban core radius:</span>
+        {[10, 15, 25].map(r => (
+          <button
+            key={r}
+            className={`ext-radius-btn ${selectedRadius === r ? 'ext-radius-active' : ''}`}
+            onClick={() => setSelectedRadius(r)}
+          >
+            {r} mi
+          </button>
+        ))}
+      </div>
+
+      <div className="ext-markets">
+        {eligible.map(m => {
+          const pool = m.pools[selectedRadius]
+          return (
+            <div key={m.id} className="ext-market-card">
+              <div className="ext-market-header">
+                <div className="ext-market-name">{m.name}, {m.state}</div>
+                <div className="ext-market-dist">{m.distFromAnchor}mi from your zip</div>
+              </div>
+              <div className="ext-market-desc">{m.description}</div>
+              <div className="ext-market-stats">
+                <div className="ext-stat">
+                  <div className="ext-stat-val avail-pos">{fmtN(pool.avail)}</div>
+                  <div className="ext-stat-label">leads available within {selectedRadius}mi of city center</div>
+                </div>
+                <div className="ext-stat">
+                  <div className="ext-stat-val" style={{color:'var(--navy)'}}>{pool.zips}</div>
+                  <div className="ext-stat-label">zip codes in pool</div>
+                </div>
+                {pool.whitespace > 0 && (
+                  <div className="ext-stat">
+                    <div className="ext-stat-val" style={{color:'#7c3aed'}}>{pool.whitespace}</div>
+                    <div className="ext-stat-label">whitespace zips (no active BC)</div>
+                  </div>
+                )}
+              </div>
+              <div className="ext-cta">
+                {/* PILOT: reservation capability pending leadership approval */}
+                <div className="ext-pending-note">
+                  🔒 Lead reservation for market extension is pending pilot approval.
+                  To express interest, contact your ICO Ops manager and reference zip <strong>{searchZip}</strong> + <strong>{m.name} Market Extension</strong>.
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="ext-footer">
+        Market Extension is an ICO pilot program limited to Boston and New York City. Eligibility is based on your dealer zip being within {PILOT_RADIUS_MI} miles of the urban core. Availability figures reflect current Opportunity Finder OLR data.
+      </div>
+    </div>
+  )
+}
 
 // ── Bug 5: Data freshness footer ──────────────────────────────────────────
 function DataFreshnessFooter({ dataDate: dateDateStr }) {
