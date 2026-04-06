@@ -334,3 +334,45 @@ header h1 { font-family:var(--cond); font-weight:700; font-size:20px; color:#fff
 .ext-pending-note { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); border-radius:6px; padding:10px 12px; font-size:12px; color:rgba(255,255,255,.6); line-height:1.5; }
 .ext-pending-note strong { color:#fff; }
 .ext-footer { font-size:11px; color:rgba(255,255,255,.3); line-height:1.5; border-top:1px solid rgba(255,255,255,.08); padding-top:12px; }
+
+/* ── Approval Score Card ── */
+.score-card { background:var(--card); border:1px solid var(--border); border-radius:9px; padding:16px; margin-bottom:16px; }
+.score-main { display:flex; align-items:flex-start; gap:16px; }
+.score-gauge { width:72px; height:72px; border-radius:50%; border:3px solid; display:flex; flex-direction:column; align-items:center; justify-content:center; flex-shrink:0; }
+.score-number { font-family:var(--mono); font-size:26px; font-weight:700; line-height:1; }
+.score-denom { font-family:var(--mono); font-size:11px; color:var(--muted); }
+.score-info { flex:1; }
+.score-label { font-family:var(--cond); font-weight:700; font-size:14px; margin-bottom:4px; }
+.score-rationale { font-size:13px; color:var(--muted); line-height:1.5; margin-bottom:8px; }
+.score-breakdown-btn { font-size:11px; color:var(--navy); background:none; border:none; cursor:pointer; padding:0; text-decoration:underline; text-underline-offset:2px; }
+.score-breakdown { margin-top:12px; padding-top:12px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:6px; }
+.score-factor { display:flex; align-items:center; gap:10px; font-size:12px; }
+.score-factor-name { width:140px; color:var(--muted); flex-shrink:0; }
+.score-factor-bar { flex:1; height:6px; background:var(--bg); border-radius:3px; overflow:hidden; }
+.score-factor-fill { height:100%; border-radius:3px; transition:width .4s; }
+.score-factor-val { width:30px; text-align:right; font-family:var(--mono); font-size:11px; color:var(--muted); }
+
+/* ── Dealer trend arrows ── */
+.td-trend { text-align:center; font-size:15px; font-weight:700; width:32px; }
+.trend-up { color:var(--green); }
+.trend-down { color:var(--red); }
+.trend-flat { color:var(--muted); }
+.trend-na { color:var(--border); font-size:12px; }
+
+/* ── Zip Notes ── */
+.notes-panel { background:var(--card); border:1px solid var(--border); border-radius:9px; padding:16px; margin-bottom:16px; }
+.notes-title { font-family:var(--cond); font-weight:700; font-size:13px; color:var(--navy); margin-bottom:12px; }
+.notes-input-row { display:flex; gap:8px; margin-bottom:12px; }
+.notes-input { flex:1; background:var(--bg); border:1.5px solid var(--border); border-radius:6px; padding:8px 12px; font-family:var(--sans); font-size:13px; outline:none; color:var(--text); }
+.notes-input:focus { border-color:var(--navy); }
+.notes-save-btn { background:var(--navy); color:#fff; border:none; border-radius:6px; padding:8px 16px; font-family:var(--cond); font-weight:700; font-size:12px; letter-spacing:1px; text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+.notes-save-btn:disabled { opacity:.4; cursor:not-allowed; }
+.notes-empty { font-size:12px; color:var(--muted); padding:8px 0; font-style:italic; }
+.notes-list { display:flex; flex-direction:column; gap:8px; }
+.note-item { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:10px 12px; }
+.note-text { font-size:13px; color:var(--text); line-height:1.5; margin-bottom:6px; }
+.note-meta { display:flex; align-items:center; gap:10px; font-size:11px; color:var(--muted); }
+.note-author { font-family:var(--cond); font-weight:700; color:var(--navy); }
+.note-date { flex:1; }
+.note-delete { background:none; border:none; color:var(--muted); cursor:pointer; font-size:12px; padding:0; }
+.note-delete:hover { color:var(--red); }

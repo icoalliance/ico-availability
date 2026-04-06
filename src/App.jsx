@@ -575,6 +575,7 @@ function DealerTable({ dma, searchZip }) {
               <th className="th-r">Tenure</th><th className="th-r">Rate</th>
               <th className="th-r">Mkt Rate</th><th className="th-r">DAT Target</th>
               <th className="th-r">Available</th>
+              <th className="th-r" title="Delivery trend Dec→Feb">Trend</th>
               {months.map(m => <th key={m} className="th-month">{m}</th>)}
             </tr>
           </thead>
@@ -602,6 +603,17 @@ function DealerTable({ dma, searchZip }) {
                   <td className="td-right td-dim">{d[4]}</td>
                   <td className="td-right td-num">{fmtN(d[5])}</td>
                   <td className={`td-right td-num ${aClass}`}>{fmtN(d[6])}</td>
+                  <td className="td-trend">{(() => {
+                    const p = d[12] || [null,null,null,null]
+                    // Use Dec(0), Jan(1), Feb(2) — skip Mar(3) partial
+                    const vals = [p[0], p[1], p[2]].filter(v => v !== null)
+                    if (vals.length < 2) return <span className="trend-na">—</span>
+                    const first = vals[0], last = vals[vals.length-1]
+                    const diff = last - first
+                    if (diff > 0.05)  return <span className="trend-up">↑</span>
+                    if (diff < -0.05) return <span className="trend-down">↓</span>
+                    return <span className="trend-flat">→</span>
+                  })()}</td>
                   {leads.map((l, i) => (
                     <td key={i} className="td-month">
                       {l !== null
@@ -973,6 +985,12 @@ export default function App() {
                 <div className="rec-body" dangerouslySetInnerHTML={{__html: recText}} />
               </div>
 
+              <ApprovalScoreCard
+                av={av}
+                desired={des}
+                dmaRank={Object.entries(dmaSaturation).sort((a,b)=>b[1].avail-a[1].avail).findIndex(([d])=>d===info.dma)+1}
+                totalDmas={Object.keys(dmaSaturation).length}
+              />
               <MarketIntelligenceInline zip={info.zip} dma={info.dma} av={av} nearbyWhitespace={result.whitespace || []} />
               <AvailCards av={av} desired={des} />
 
@@ -989,6 +1007,7 @@ export default function App() {
               <MarketExtensionCard searchZip={info.zip} searchCoords={coordsMap[info.zip]} />
               <TenureInsightForZip dma={info.dma} searchZip={info.zip} />
               <DealerTable dma={info.dma} searchZip={info.zip} />
+              <ZipNotes zip={info.zip} sellerName={sellerName} />
 
               <DataFreshnessFooter dataDate={dataDate} />
             </>
@@ -1006,6 +1025,93 @@ export default function App() {
 }
 
 
+
+
+// ── Approval Likelihood Score ─────────────────────────────────────────────
+function calcApprovalScore(av, desired, dmaRank, totalDmas) {
+  if (!desired || desired === 0) return null
+  const { base, best15, best30, best45, hasUnderdeliveryWarning } = av
+  if (base === null) return null
+
+  const baseOverage = base < 0 ? Math.abs(base) : 0
+  const bestCovering = best15 >= desired ? best15 : best30 >= desired ? best30 : best45 >= desired ? best45 : 0
+  const overageRatio = bestCovering > 0 ? baseOverage / bestCovering : (baseOverage > 0 ? 99 : 0)
+  const dmaPct = dmaRank / totalDmas
+
+  // Factor 1: Base availability (0-3)
+  const f1 = base >= desired ? 3 : base >= 0 ? 2 : baseOverage < 200 ? 1 : 0
+
+  // Factor 2: Ring coverage (0-3)
+  const f2 = best15 >= desired ? 3 : best30 >= desired ? 2 : best45 >= desired ? 1 : 0
+
+  // Factor 3: Overage ratio (0-2)
+  const f3 = overageRatio === 0 ? 2 : overageRatio <= 0.5 ? 2 : overageRatio <= 1.0 ? 1.5 : overageRatio <= 1.5 ? 1 : 0
+
+  // Factor 4: DMA health (0-1)
+  const f4 = dmaPct <= 0.5 ? 1 : dmaPct <= 0.85 ? 0.5 : 0
+
+  // Factor 5: Underdelivery (0-1)
+  const f5 = hasUnderdeliveryWarning ? 0 : 1
+
+  const score = Math.round(Math.min(10, Math.max(1, f1 + f2 + f3 + f4 + f5)))
+
+  const bands = [
+    [9, 10, 'Strong',  '#00c896', 'Strong approval candidate — base availability covers the request with healthy market headroom.'],
+    [7,  8, 'Good',    '#4ade80', 'Good candidate — inner ring availability supports the request. Present to ICO Ops with confidence.'],
+    [5,  6, 'Fair',    '#f5a800', 'Approvable with context — availability exists but market constraints require ICO Ops review.'],
+    [3,  4, 'Weak',    '#f97316', 'Weak candidate — significant overage or outer-ring-only coverage makes approval difficult.'],
+    [1,  2, 'Poor',    '#ff4757', 'Unlikely to approve — insufficient availability even with ring boosters.'],
+  ]
+  const band = bands.find(([lo, hi]) => score >= lo && score <= hi) || bands[4]
+
+  return { score, label: band[2], color: band[3], rationale: band[4], f1, f2, f3, f4, f5 }
+}
+
+function ApprovalScoreCard({ av, desired, dmaRank, totalDmas }) {
+  const result = calcApprovalScore(av, desired, dmaRank, totalDmas)
+  if (!result) return null
+  const { score, label, color, rationale, f1, f2, f3, f4, f5 } = result
+  const [showBreakdown, setShowBreakdown] = useState(false)
+
+  const factors = [
+    { name: 'Base Availability', val: f1, max: 3 },
+    { name: 'Ring Coverage',     val: f2, max: 3 },
+    { name: 'Overage Ratio',     val: f3, max: 2 },
+    { name: 'DMA Health',        val: f4, max: 1 },
+    { name: 'Delivery Trend',    val: f5, max: 1 },
+  ]
+
+  return (
+    <div className="score-card">
+      <div className="score-main">
+        <div className="score-gauge" style={{borderColor: color}}>
+          <div className="score-number" style={{color}}>{score}</div>
+          <div className="score-denom">/10</div>
+        </div>
+        <div className="score-info">
+          <div className="score-label" style={{color}}>{label} Approval Likelihood</div>
+          <div className="score-rationale">{rationale}</div>
+          <button className="score-breakdown-btn" onClick={() => setShowBreakdown(b => !b)}>
+            {showBreakdown ? 'Hide breakdown' : 'Show score breakdown'}
+          </button>
+        </div>
+      </div>
+      {showBreakdown && (
+        <div className="score-breakdown">
+          {factors.map(f => (
+            <div key={f.name} className="score-factor">
+              <div className="score-factor-name">{f.name}</div>
+              <div className="score-factor-bar">
+                <div className="score-factor-fill" style={{width: `${(f.val/f.max)*100}%`, background: color}} />
+              </div>
+              <div className="score-factor-val">{f.val}/{f.max}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ── Market Extension Pilot ────────────────────────────────────────────────
 const PILOT_MARKETS = [
@@ -1123,6 +1229,102 @@ function MarketExtensionCard({ searchZip, searchCoords }) {
       <div className="ext-footer">
         Market Extension is an ICO pilot program limited to Boston and New York City. Eligibility is based on your dealer zip being within {PILOT_RADIUS_MI} miles of the urban core. Availability figures reflect current Opportunity Finder OLR data.
       </div>
+    </div>
+  )
+}
+
+
+// ── Zip Notes ─────────────────────────────────────────────────────────────
+async function fetchNotes(zip) {
+  try {
+    const res = await fetch(`/api/notes?zip=${zip}`)
+    if (!res.ok) return []
+    return res.json()
+  } catch { return [] }
+}
+
+async function saveNote(zip, text, author) {
+  try {
+    const res = await fetch('/api/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ zip, text, author, createdAt: new Date().toISOString() })
+    })
+    if (!res.ok) return null
+    return res.json()
+  } catch { return null }
+}
+
+async function deleteNote(zip, noteId) {
+  try {
+    await fetch('/api/notes', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ zip, noteId })
+    })
+  } catch {}
+}
+
+function ZipNotes({ zip, sellerName }) {
+  const [notes, setNotes] = useState([])
+  const [text, setText] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    fetchNotes(zip).then(n => { setNotes(n); setLoading(false) })
+  }, [zip])
+
+  async function handleSave() {
+    if (!text.trim()) return
+    setSaving(true)
+    const note = await saveNote(zip, text.trim(), sellerName || 'Unknown')
+    if (note) {
+      setNotes(prev => [note, ...prev])
+      setText('')
+    }
+    setSaving(false)
+  }
+
+  async function handleDelete(noteId) {
+    await deleteNote(zip, noteId)
+    setNotes(prev => prev.filter(n => n.id !== noteId))
+  }
+
+  return (
+    <div className="notes-panel">
+      <div className="notes-title">📝 Seller Notes — {zip}</div>
+      <div className="notes-input-row">
+        <input
+          className="notes-input"
+          placeholder="Add a note (e.g. spoke to dealer 4/6, interested in 150 leads...)"
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSave()}
+        />
+        <button className="notes-save-btn" onClick={handleSave} disabled={saving || !text.trim()}>
+          {saving ? 'Saving…' : 'Add'}
+        </button>
+      </div>
+      {loading ? (
+        <div className="notes-empty">Loading notes…</div>
+      ) : notes.length === 0 ? (
+        <div className="notes-empty">No notes yet for this zip. Add one above.</div>
+      ) : (
+        <div className="notes-list">
+          {notes.map(n => (
+            <div key={n.id} className="note-item">
+              <div className="note-text">{n.text}</div>
+              <div className="note-meta">
+                <span className="note-author">{n.author}</span>
+                <span className="note-date">{fmtDate(n.createdAt)}</span>
+                <button className="note-delete" onClick={() => handleDelete(n.id)} title="Delete note">✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
