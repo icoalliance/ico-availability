@@ -15,6 +15,8 @@ export default defineConfig({
           'data-logo':   ['./src/kbbLogo.js'],
           'data-market': ['./src/marketData.js'],
           'data-offers': ['./src/offerMap.js'],
+          'data-demo': ['./src/demoMap.js'],
+          'data-comp': ['./src/comparables.js'],
           'vendor':      ['react', 'react-dom', 'xlsx'],
         }
       }

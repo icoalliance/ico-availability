@@ -5,8 +5,11 @@ import { fetchReservations, createReservation, cancelReservation, daysUntil, fmt
 import { dealerMap } from './dealerMap'
 import { KBB_LOGO_B64 } from './kbbLogo'
 import { coordsMap } from './coordsMap'
+import { matMap } from './matMap'
 import { haversine } from './utils'
 import { whitespaceZips, dmaSaturation, DATA_DATE, DATA_BC_COUNT } from './marketData'
+import { demoMap } from './demoMap'
+import { comparables as comparablesMap } from './comparables'
 import { offerMap, OFFER_MONTH } from './offerMap'
 
 // ── Small helpers ──────────────────────────────────────────────────────────
@@ -985,6 +988,7 @@ export default function App() {
                 <div className="rec-body" dangerouslySetInnerHTML={{__html: recText}} />
               </div>
 
+              <DemographicsCard zip={info.zip} city={info.city} state={info.state} />
               <ApprovalScoreCard
                 av={av}
                 desired={des}
@@ -1008,6 +1012,13 @@ export default function App() {
               <TenureInsightForZip dma={info.dma} searchZip={info.zip} />
               <DealerTable dma={info.dma} searchZip={info.zip} />
               <ZipNotes zip={info.zip} sellerName={sellerName} />
+              <ComparablesCard
+                zip={info.zip}
+                av={av}
+                desired={des}
+                dmaRank={Object.entries(dmaSaturation).sort((a,b)=>b[1].avail-a[1].avail).findIndex(([d])=>d===info.dma)+1}
+                totalDmas={Object.keys(dmaSaturation).length}
+              />
 
               <DataFreshnessFooter dataDate={dataDate} />
             </>
@@ -1325,6 +1336,98 @@ function ZipNotes({ zip, sellerName }) {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+
+// ── Demographics Card ─────────────────────────────────────────────────────
+function DemographicsCard({ zip, city, state }) {
+  const d = demoMap[zip]
+  if (!d || !d[0]) return null
+  const [pop, inc, age, hval] = d
+
+  const fmt = n => n ? Number(n).toLocaleString() : '—'
+  const fmtUSD = n => n ? '$' + Number(n).toLocaleString() : '—'
+
+  const incLabel = inc
+    ? inc >= 100000 ? 'High income' : inc >= 65000 ? 'Mid-high income' : inc >= 45000 ? 'Mid income' : 'Below average'
+    : null
+  const incColor = inc
+    ? inc >= 100000 ? 'var(--green)' : inc >= 65000 ? '#4ade80' : inc >= 45000 ? '#f5a800' : 'var(--muted)'
+    : 'var(--muted)'
+
+  return (
+    <div className="demo-card">
+      <div className="demo-title">📍 Zip Code Intelligence — {zip}</div>
+      <div className="demo-grid">
+        <div className="demo-stat">
+          <div className="demo-val">{fmt(pop)}</div>
+          <div className="demo-label">Population</div>
+        </div>
+        <div className="demo-stat">
+          <div className="demo-val" style={{color: incColor}}>{fmtUSD(inc)}</div>
+          <div className="demo-label">Median Household Income {incLabel && <span className="demo-badge" style={{background: incColor + '20', color: incColor}}>{incLabel}</span>}</div>
+        </div>
+        <div className="demo-stat">
+          <div className="demo-val">{age ? age.toFixed(1) : '—'}</div>
+          <div className="demo-label">Median Age</div>
+        </div>
+        <div className="demo-stat">
+          <div className="demo-val">{fmtUSD(hval)}</div>
+          <div className="demo-label">Median Home Value</div>
+        </div>
+      </div>
+      <div className="demo-source">Source: U.S. Census Bureau, ACS 5-Year Estimates (2022)</div>
+    </div>
+  )
+}
+
+// ── Comparable Markets ────────────────────────────────────────────────────
+function ComparablesCard({ zip, av, desired, dmaRank, totalDmas }) {
+  const compZips = comparablesMap[zip]
+  if (!compZips || compZips.length === 0) return null
+
+  return (
+    <div className="comp-card">
+      <div className="comp-title">🔍 Comparable Markets</div>
+      <div className="comp-subtitle">
+        Similar BCs nationally — same population range, income level, and market saturation. Use these as benchmarks when presenting to ICO Ops.
+      </div>
+      <table className="comp-table">
+        <thead>
+          <tr>
+            <th>Zip</th><th>Location</th><th className="th-r">Population</th>
+            <th className="th-r">Income</th><th className="th-r">Availability</th>
+            <th className="th-r">Score</th>
+          </tr>
+        </thead>
+        <tbody>
+          {compZips.map(z => {
+            const mr = matMap[z]
+            if (!mr) return null
+            const d = demoMap[z] || [null,null,null,null]
+            const dmaR = Object.entries(dmaSaturation).sort((a,b)=>b[1].avail-a[1].avail).findIndex(([d])=>d===mr[2])+1
+            // Quick score for comparable (simplified - no ring data available without full calc)
+            const baseScore = mr[4] === null ? null :
+              mr[4] > 0 ? Math.min(10, Math.round(7 + (mr[4] / 500))) : Math.max(1, Math.round(5 - (Math.abs(mr[4]) / 500)))
+            const scoreColor = baseScore >= 8 ? 'var(--green)' : baseScore >= 6 ? '#f5a800' : baseScore >= 4 ? '#f97316' : 'var(--red)'
+            return (
+              <tr key={z}>
+                <td className="td-mono">{z}</td>
+                <td>{mr[0]}, {mr[1]} <span className="comp-dma">{mr[2]}</span></td>
+                <td className="td-right td-dim">{d[0] ? Number(d[0]).toLocaleString() : '—'}</td>
+                <td className="td-right td-dim">{d[1] ? '$' + Number(d[1]).toLocaleString() : '—'}</td>
+                <td className={`td-right td-num ${mr[4] >= 0 ? 'avail-pos' : 'avail-neg'}`}>{mr[4] !== null ? Number(mr[4]).toLocaleString() : '—'}</td>
+                <td className="td-right" style={{color: scoreColor, fontFamily:'var(--mono)', fontWeight:700}}>
+                  {baseScore !== null ? baseScore + '/10' : '—'}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      <div className="comp-note">Comparables matched by population, income, DMA saturation, and market availability. Scores are baseline estimates.</div>
     </div>
   )
 }
