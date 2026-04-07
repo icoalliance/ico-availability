@@ -399,3 +399,123 @@ header h1 { font-family:var(--cond); font-weight:700; font-size:20px; color:#fff
 .comp-dma { font-size:10px; color:var(--muted); margin-left:4px; }
 .comp-note { font-size:11px; color:var(--muted); margin-top:10px; font-style:italic; }
 @media (max-width:700px) { .demo-grid { grid-template-columns:repeat(2,1fr); } }
+
+/* ══════════════════════════════════════════════════════
+   MOBILE RESPONSIVE — Primary breakpoint: 640px
+   ══════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+
+  /* Header — stack logo/title on top, buttons on bottom */
+  header {
+    padding: 10px 16px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  header img { height: 36px; }
+  header h1 { font-size: 15px; padding-left: 10px; }
+  header > div { margin-left: 0 !important; width: 100%; justify-content: flex-end; }
+
+  /* Import bar */
+  .import-bar { padding: 6px 16px; }
+  .res-status-btn { font-size: 10px; }
+
+  /* Main padding */
+  main { margin: 16px auto; padding: 0 12px; }
+
+  /* Search box — stack inputs vertically */
+  .search-box { padding: 16px; }
+  .search-row { flex-direction: column; gap: 8px; }
+  .search-row > div { width: 100%; }
+  #zipInput { width: 100%; font-size: 18px; }
+  .desired-input { width: 100% !important; font-size: 15px; }
+  .check-btn { width: 100%; padding: 14px; font-size: 16px; }
+  .lbl-sm { display: block; margin-bottom: 4px; }
+
+  /* Result header */
+  .res-header { gap: 12px; }
+  .loc-name { font-size: 20px; }
+  .loc-zip { font-size: 17px; }
+
+  /* Recent zips — scroll horizontally */
+  .recent-zips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+  .recent-zip-btn { flex-shrink: 0; }
+
+  /* Availability cards — single column on very small screens */
+  .ring-grid4 { grid-template-columns: repeat(2,1fr) !important; }
+  .ring-avail { font-size: 18px; }
+  .ring-sublabel { font-size: 10px; }
+
+  /* Score card — stack gauge and info */
+  .score-main { flex-direction: column; align-items: center; text-align: center; }
+  .score-gauge { width: 80px; height: 80px; }
+  .score-breakdown-btn { margin: 0 auto; }
+
+  /* Market intel inline panel */
+  .mkt-inline-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .mkt-inline-chips { width: 100%; }
+  .mkt-inline-toggle { align-self: flex-end; }
+
+  /* Hot markets panel */
+  .hot-markets-header { flex-direction: column; align-items: flex-start; }
+  .hot-markets-tabs { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
+  .hot-tab { flex-shrink: 0; }
+
+  /* Reserve box */
+  .reserve-fields { flex-direction: column; }
+  .reserve-duplicate-warning button { width: 100%; }
+
+  /* Demo grid — 2 cols already, just adjust padding */
+  .demo-card { padding: 12px; }
+  .demo-val { font-size: 15px; }
+
+  /* Comparables — horizontal scroll */
+  .comp-card { padding: 12px; }
+
+  /* Market extension */
+  .ext-panel { padding: 14px; }
+  .ext-title { font-size: 15px; }
+  .ext-market-stats { gap: 10px; }
+
+  /* Notes panel */
+  .notes-input-row { flex-direction: column; }
+  .notes-save-btn { width: 100%; }
+
+  /* Dealer table — already has overflow-x:auto, just ensure header visible */
+  .section-header { flex-direction: column; gap: 4px; }
+  .section-meta { font-size: 10px; }
+
+  /* Reservation slideout */
+  .slideout-panel { width: 100vw; max-width: 100vw; }
+  .slideout-header { padding: 14px 16px; }
+  .slideout-body { padding: 14px 16px; }
+  .slideout-dma-filter { padding: 12px 16px; }
+  .slideout-summary { padding: 10px 16px; gap: 12px; }
+
+  /* LPO months */
+  .lpo-months { gap: 6px; }
+  .lpo-mo { min-width: 55px; padding: 5px 8px; }
+  .lpo-mo-val { font-size: 15px; }
+
+  /* Footer */
+  .footer { flex-direction: column; align-items: flex-start; gap: 4px; font-size: 10px; }
+
+  /* Modal */
+  .import-modal { padding: 20px 16px; }
+  .import-modal-footer { flex-direction: column; gap: 8px; align-items: stretch; }
+  .import-close-btn { width: 100%; text-align: center; }
+}
+
+/* Comparables table needs overflow-x at all sizes */
+.comp-table-wrap { overflow-x: auto; border-radius: 7px; border: 1px solid var(--border); }
+.comp-table { border-collapse: collapse; min-width: 500px; }
+.comp-table thead th { background: var(--navy); color: rgba(255,255,255,.7); }
+
+/* Touch-friendly tap targets */
+@media (max-width: 640px) {
+  .imp-btn, .res-cancel-btn, .hot-check-btn, .note-delete,
+  .score-breakdown-btn, .dma-pill, .res-action-btn {
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+  }
+}

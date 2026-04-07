@@ -570,7 +570,7 @@ function DealerTable({ dma, searchZip }) {
         <table className="dealer-table">
           <thead>
             <tr className="thead-top">
-              <th colSpan={10}></th>
+              <th colSpan={11}></th>
               <th colSpan={4} className="th-month-group">Total Leads &amp; % of Target</th>
             </tr>
             <tr>
@@ -630,7 +630,7 @@ function DealerTable({ dma, searchZip }) {
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={8} className="tf-label">DMA TOTALS</td>
+              <td colSpan={9} className="tf-label">DMA TOTALS</td>
               <td className="td-right td-num tf-val">{fmtN(totalTarget)}</td>
               <td className={`td-right td-num tf-val ${totalAvail > 0 ? 'avail-pos' : 'avail-neg'}`}>{fmtN(totalAvail)}</td>
               <td colSpan={4}></td>
@@ -1394,7 +1394,7 @@ function ComparablesCard({ zip, av, desired, dmaRank, totalDmas }) {
       <div className="comp-subtitle">
         Similar BCs nationally — same population range, income level, and market saturation. Use these as benchmarks when presenting to ICO Ops.
       </div>
-      <table className="comp-table">
+      <div className="comp-table-wrap"><table className="comp-table">
         <thead>
           <tr>
             <th>Zip</th><th>Location</th><th className="th-r">Population</th>
@@ -1426,7 +1426,7 @@ function ComparablesCard({ zip, av, desired, dmaRank, totalDmas }) {
             )
           })}
         </tbody>
-      </table>
+      </table></div>
       <div className="comp-note">Comparables matched by population, income, DMA saturation, and market availability. Scores are baseline estimates.</div>
     </div>
   )
