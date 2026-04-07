@@ -17,6 +17,7 @@ export default defineConfig({
           'data-offers': ['./src/offerMap.js'],
           'data-demo': ['./src/demoMap.js'],
           'data-comp': ['./src/comparables.js'],
+          'data-groups': ['./src/groupIndex.js'],
           'vendor':      ['react', 'react-dom', 'xlsx'],
         }
       }

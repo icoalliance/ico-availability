@@ -6,6 +6,7 @@ import { dealerMap } from './dealerMap'
 import { KBB_LOGO_B64 } from './kbbLogo'
 import { coordsMap } from './coordsMap'
 import { matMap } from './matMap'
+import { groupIndex } from './groupIndex'
 import { haversine } from './utils'
 import { whitespaceZips, dmaSaturation, DATA_DATE, DATA_BC_COUNT } from './marketData'
 import { demoMap } from './demoMap'
@@ -1009,6 +1010,13 @@ export default function App() {
               )}
 
               <MarketExtensionCard searchZip={info.zip} searchCoords={coordsMap[info.zip]} />
+              <DealerGroupCard
+                searchZip={info.zip}
+                dma={info.dma}
+                reservations={reservations}
+                onReserved={onReserved}
+                sellerName={sellerName}
+              />
               <TenureInsightForZip dma={info.dma} searchZip={info.zip} />
               <DealerTable dma={info.dma} searchZip={info.zip} />
               <ZipNotes zip={info.zip} sellerName={sellerName} />
@@ -1428,6 +1436,235 @@ function ComparablesCard({ zip, av, desired, dmaRank, totalDmas }) {
         </tbody>
       </table></div>
       <div className="comp-note">Comparables matched by population, income, DMA saturation, and market availability. Scores are baseline estimates.</div>
+    </div>
+  )
+}
+
+
+// ── Dealer Group Card ─────────────────────────────────────────────────────
+function DealerGroupCard({ searchZip, dma, reservations, onReserved, sellerName }) {
+  const [searchTerm, setSearchTerm] = useState('')
+  const [selectedGroup, setSelectedGroup] = useState(null)
+  const [selectedStores, setSelectedStores] = useState({})
+  const [leadsPerStore, setLeadsPerStore] = useState({})
+  const [reservingGroup, setReservingGroup] = useState(false)
+  const [groupReserved, setGroupReserved] = useState(false)
+
+  // Auto-detect group from searched zip
+  const autoGroup = React.useMemo(() => {
+    // Find the dealer at this zip
+    for (const [gname, stores] of Object.entries(groupIndex)) {
+      if (stores.some(s => s[0] === searchZip)) {
+        return { name: gname, stores }
+      }
+    }
+    return null
+  }, [searchZip])
+
+  // Search results for manual search
+  const searchResults = React.useMemo(() => {
+    if (!searchTerm || searchTerm.length < 2) return []
+    const term = searchTerm.toLowerCase()
+    return Object.entries(groupIndex)
+      .filter(([name]) => name.toLowerCase().includes(term))
+      .slice(0, 8)
+      .map(([name, stores]) => ({ name, stores }))
+  }, [searchTerm])
+
+  const activeGroup = selectedGroup || autoGroup
+
+  // Initialize store selections when group changes
+  React.useEffect(() => {
+    if (!activeGroup) return
+    const sel = {}
+    const leads = {}
+    activeGroup.stores.forEach(s => {
+      sel[s[0]] = true
+      leads[s[0]] = s[3] || 100  // default to target
+    })
+    setSelectedStores(sel)
+    setLeadsPerStore(leads)
+    setGroupReserved(false)
+  }, [activeGroup?.name, searchZip])
+
+  async function handleGroupReserve() {
+    const toReserve = activeGroup.stores.filter(s => selectedStores[s[0]])
+    if (!toReserve.length) return
+    setReservingGroup(true)
+    const groupId = `grp_${Date.now()}`
+    try {
+      for (const store of toReserve) {
+        const zipRec = matMap[store[0]]
+        await createReservation({
+          zip: store[0],
+          city: zipRec ? zipRec[0] : store[2],
+          state: zipRec ? zipRec[1] : '',
+          dma: store[2],
+          leadsReserved: parseInt(leadsPerStore[store[0]]) || store[3] || 100,
+          dealerName: store[1],
+          notes: `${activeGroup.name} — Group Reservation`,
+          reservedBy: sellerName || 'Unknown',
+          groupId
+        })
+      }
+      setGroupReserved(true)
+      onReserved()
+    } catch(e) {
+      console.error('Group reservation failed:', e)
+    }
+    setReservingGroup(false)
+  }
+
+  const groupTotalTarget = activeGroup
+    ? activeGroup.stores.filter(s => selectedStores[s[0]]).reduce((sum,s) => sum + (s[3]||0), 0)
+    : 0
+  const groupTotalAvail = activeGroup
+    ? activeGroup.stores.filter(s => selectedStores[s[0]]).reduce((sum,s) => sum + (s[4]||0), 0)
+    : 0
+  const totalLeadsToReserve = activeGroup
+    ? activeGroup.stores.filter(s => selectedStores[s[0]]).reduce((sum,s) => sum + (parseInt(leadsPerStore[s[0]])||0), 0)
+    : 0
+
+  return (
+    <div className="group-card">
+      <div className="group-header">
+        <div className="group-title">🏢 Dealer Group</div>
+        {autoGroup && (
+          <div className="group-auto-badge">Auto-detected from {searchZip}</div>
+        )}
+      </div>
+
+      {/* Manual search fallback */}
+      {!autoGroup && (
+        <div className="group-search-row">
+          <input
+            className="group-search-input"
+            placeholder="Search by group name (e.g. Oakes, AutoNation, Lithia...)"
+            value={searchTerm}
+            onChange={e => { setSearchTerm(e.target.value); setSelectedGroup(null) }}
+          />
+          {searchResults.length > 0 && (
+            <div className="group-search-results">
+              {searchResults.map(g => (
+                <div key={g.name} className="group-search-result" onClick={() => {
+                  setSelectedGroup(g); setSearchTerm(g.name)
+                }}>
+                  <span className="group-result-name">{g.name}</span>
+                  <span className="group-result-count">{g.stores.length} stores</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {autoGroup && selectedGroup === null && (
+        <div className="group-switch-row">
+          <span className="group-auto-label">Showing: <strong>{autoGroup.name}</strong></span>
+          <button className="group-switch-btn" onClick={() => { setSelectedGroup(null); setSearchTerm('') }}>
+            Search different group
+          </button>
+        </div>
+      )}
+
+      {activeGroup && (
+        <>
+          <div className="group-summary-row">
+            <div className="group-summary-stat">
+              <div className="group-summary-val">{activeGroup.stores.length}</div>
+              <div className="group-summary-label">stores</div>
+            </div>
+            <div className="group-summary-stat">
+              <div className="group-summary-val">{fmtN(groupTotalTarget)}</div>
+              <div className="group-summary-label">leads/mo allocated</div>
+            </div>
+            <div className="group-summary-stat">
+              <div className="group-summary-val" style={{color: groupTotalAvail >= 0 ? 'var(--green)' : 'var(--red)'}}>
+                {fmtN(groupTotalAvail)}
+              </div>
+              <div className="group-summary-label">net available</div>
+            </div>
+            <div className="group-summary-stat">
+              <div className="group-summary-val">{fmtN(totalLeadsToReserve)}</div>
+              <div className="group-summary-label">leads to reserve</div>
+            </div>
+          </div>
+
+          <table className="group-table">
+            <thead>
+              <tr>
+                <th style={{width:32}}></th>
+                <th>Store</th>
+                <th>DMA</th>
+                <th className="th-r">Target</th>
+                <th className="th-r">Available</th>
+                <th className="th-r">Tenure</th>
+                <th className="th-r">Reserve Leads</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activeGroup.stores.map(s => {
+                const isSelected = selectedStores[s[0]]
+                const availColor = (s[4]||0) >= 0 ? 'var(--green)' : 'var(--red)'
+                return (
+                  <tr key={s[0]} className={isSelected ? '' : 'group-row-dim'}>
+                    <td>
+                      <input type="checkbox" checked={!!isSelected}
+                        onChange={e => setSelectedStores(p => ({...p, [s[0]]: e.target.checked}))} />
+                    </td>
+                    <td>
+                      <div className="group-store-name">{s[1]}</div>
+                      <div className="group-store-zip">{s[0]}</div>
+                    </td>
+                    <td className="td-dim" style={{fontSize:11}}>{s[2]}</td>
+                    <td className="td-right td-num">{fmtN(s[3])}</td>
+                    <td className="td-right td-num" style={{color: availColor}}>{fmtN(s[4])}</td>
+                    <td className="td-right td-dim">{s[5] ? s[5]+'mo' : '—'}</td>
+                    <td className="td-right">
+                      <input
+                        type="number"
+                        className="group-leads-input"
+                        value={leadsPerStore[s[0]] || ''}
+                        disabled={!isSelected}
+                        onChange={e => setLeadsPerStore(p => ({...p, [s[0]]: e.target.value}))}
+                        min={1}
+                      />
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+
+          <div className="group-footer">
+            {groupReserved ? (
+              <div className="group-reserved-confirm">
+                ✓ Group reservation complete — {Object.values(selectedStores).filter(Boolean).length} stores reserved for {fmtN(totalLeadsToReserve)} total leads.
+                <br/><span style={{fontSize:12,color:'var(--muted)'}}>View all reservations in the Active Reservations panel below or click the status bar.</span>
+              </div>
+            ) : (
+              <>
+                <div className="group-footer-note">
+                  Select stores and set lead amounts above. Each store gets its own reservation linked by a shared group ID.
+                </div>
+                <button
+                  className="group-reserve-btn"
+                  onClick={handleGroupReserve}
+                  disabled={reservingGroup || Object.values(selectedStores).filter(Boolean).length === 0}
+                >
+                  {reservingGroup ? 'Reserving…' : `Reserve for ${Object.values(selectedStores).filter(Boolean).length} Store${Object.values(selectedStores).filter(Boolean).length !== 1 ? 's' : ''} — ${fmtN(totalLeadsToReserve)} Leads`}
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
+
+      {!activeGroup && !searchTerm && (
+        <div className="group-empty">
+          No dealer group detected for zip {searchZip}. Search for a group by name above to build a multi-store reservation.
+        </div>
+      )}
     </div>
   )
 }
