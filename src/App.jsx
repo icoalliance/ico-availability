@@ -798,8 +798,10 @@ function UpdateModal({ onClose, onDataUpdated }) {
 
 
 export default function App() {
-  const [zip, setZip] = useState('')
-  const [desired, setDesired] = useState('')
+  // Initialize from URL params (used by email links)
+  const urlParams = new URLSearchParams(window.location.search)
+  const [zip, setZip] = useState(urlParams.get('zip') || '')
+  const [desired, setDesired] = useState(urlParams.get('leads') || '')
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
   const [reservations, setReservations] = useState([])
@@ -833,6 +835,20 @@ export default function App() {
   }, [])
 
   useEffect(() => { loadReservations() }, [loadReservations])
+
+  // Auto-run check if URL has zip param (from email links)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const paramZip = params.get('zip')
+    const paramLeads = params.get('leads')
+    if (paramZip) {
+      // Small delay to let data load first
+      setTimeout(() => {
+        if (paramLeads) setDesired(paramLeads)
+        runCheck(paramZip)
+      }, 800)
+    }
+  }, [])
 
   // Load live data from Redis on startup if available
   useEffect(() => {
@@ -1006,7 +1022,7 @@ export default function App() {
             <span style={{fontFamily:'var(--mono)',fontSize:11,color:'rgba(255,255,255,.4)'}}>{sellerName}</span>
             {dataLoading && <span style={{fontSize:11,color:'rgba(255,255,255,.6)',fontFamily:'var(--mono)',marginRight:4}}>⟳ Updating data…</span>}
         <button className="mkt-intel-btn" onClick={() => setShowMarkets(m => !m)}>📊 Market Intel</button>
-            <button className="ops-trigger-btn" onClick={() => setShowOpsPanel(true)} title="ICO Ops Queue">🔐 Ops</button>
+            <button className="ops-trigger-btn" onClick={() => setShowOpsPanel(true)} title="ICO Ops Queue">🔐 Ops Queue</button>
             <button className="import-trigger-btn" onClick={() => setShowModal(true)}>↑ Update Data</button>
           </div>
         )}
@@ -1828,6 +1844,97 @@ function DealerGroupCard({ searchZip, dma, reservations, onReserved, sellerName,
 }
 
 
+
+// ── PIN Manager ───────────────────────────────────────────────────────────
+function PinManager({ opsUser }) {
+  const [open, setOpen] = useState(false)
+  const [pins, setPins] = useState(null)
+  const [newPin, setNewPin] = useState('')
+  const [newName, setNewName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+  const ADMIN_KEY = 'ico-admin-2026'
+
+  async function loadPins() {
+    const res = await fetch(`/api/ops-setup?adminKey=${ADMIN_KEY}`)
+    const data = await res.json()
+    if (data.pins) setPins(data.pins)
+  }
+
+  async function addPin() {
+    if (!newPin || !newName) return
+    setSaving(true)
+    const res = await fetch('/api/ops-setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminKey: ADMIN_KEY, pin: newPin, name: newName })
+    })
+    const data = await res.json()
+    if (data.ok) { setPins(data.pins); setNewPin(''); setNewName(''); setMsg('PIN added') }
+    setSaving(false)
+  }
+
+  async function removePin(pin) {
+    const res = await fetch('/api/ops-setup', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminKey: ADMIN_KEY, pin })
+    })
+    const data = await res.json()
+    if (data.ok) setPins(data.pins)
+  }
+
+  if (!open) return (
+    <div style={{marginTop:20,borderTop:'1px solid var(--border)',paddingTop:14}}>
+      <button onClick={() => { setOpen(true); loadPins() }}
+        style={{fontSize:12,color:'var(--muted)',background:'none',border:'none',cursor:'pointer',padding:0}}>
+        ⚙ Manage Ops PINs
+      </button>
+    </div>
+  )
+
+  return (
+    <div style={{marginTop:20,borderTop:'1px solid var(--border)',paddingTop:14}}>
+      <div style={{fontFamily:'var(--cond)',fontWeight:700,fontSize:12,color:'var(--navy)',marginBottom:10}}>
+        ⚙ Manage Ops PINs
+        <button onClick={() => setOpen(false)} style={{marginLeft:10,fontSize:11,color:'var(--muted)',background:'none',border:'none',cursor:'pointer'}}>hide</button>
+      </div>
+      {pins && (
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,marginBottom:12}}>
+          <thead><tr>
+            <th style={{textAlign:'left',padding:'4px 8px',color:'var(--muted)',fontWeight:700,fontSize:10,textTransform:'uppercase'}}>PIN</th>
+            <th style={{textAlign:'left',padding:'4px 8px',color:'var(--muted)',fontWeight:700,fontSize:10,textTransform:'uppercase'}}>Name</th>
+            <th></th>
+          </tr></thead>
+          <tbody>
+            {Object.entries(pins).map(([pin, name]) => (
+              <tr key={pin} style={{borderBottom:'1px solid var(--border)'}}>
+                <td style={{padding:'6px 8px',fontFamily:'var(--mono)',letterSpacing:3}}>{pin}</td>
+                <td style={{padding:'6px 8px'}}>{name}</td>
+                <td style={{padding:'6px 8px'}}>
+                  <button onClick={() => removePin(pin)}
+                    style={{color:'var(--red)',background:'none',border:'none',cursor:'pointer',fontSize:11}}>Remove</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div style={{display:'flex',gap:8,alignItems:'center'}}>
+        <input style={{width:80,padding:'5px 8px',border:'1.5px solid var(--border)',borderRadius:5,fontFamily:'var(--mono)',fontSize:13,letterSpacing:2}}
+          placeholder="PIN" maxLength={6} value={newPin} onChange={e=>setNewPin(e.target.value.replace(/\D/g,''))} />
+        <input style={{flex:1,padding:'5px 8px',border:'1.5px solid var(--border)',borderRadius:5,fontSize:13}}
+          placeholder="Person name (e.g. Sarah Johnson)" value={newName} onChange={e=>setNewName(e.target.value)} />
+        <button onClick={addPin} disabled={saving || !newPin || !newName}
+          style={{background:'var(--navy)',color:'#fff',border:'none',borderRadius:5,padding:'5px 12px',fontSize:12,fontWeight:700,cursor:'pointer'}}>
+          Add
+        </button>
+      </div>
+      {msg && <div style={{fontSize:11,color:'var(--green)',marginTop:6}}>{msg}</div>}
+    </div>
+  )
+}
+
 // ── ICO Ops Queue Panel ───────────────────────────────────────────────────
 function OpsPanel({ reservations, onClose, onUpdated }) {
   const [pin, setPin] = useState('')
@@ -1976,6 +2083,9 @@ function OpsPanel({ reservations, onClose, onUpdated }) {
                 })}
               </div>
             )}
+
+            {/* PIN Management */}
+            <PinManager opsUser={opsUser} />
 
             {/* Recently actioned */}
             {recent.length > 0 && (

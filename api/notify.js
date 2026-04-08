@@ -44,7 +44,7 @@ function opsEmailHtml(r, av) {
   const zipUrl = `${APP_URL}?zip=${r.zip}&leads=${r.leadsReserved}`
   const approveUrl = `${APP_URL}?ops_action=approve&id=${r.id}`
   const declineUrl = `${APP_URL}?ops_action=decline&id=${r.id}`
-  const submittedTime = new Date(r.submittedAt).toLocaleString('en-US', { 
+  const submittedTime = new Date(r.submittedAt || Date.now()).toLocaleString('en-US', { 
     timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' 
   })
 
@@ -52,7 +52,7 @@ function opsEmailHtml(r, av) {
 <!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b;">
 <div style="background:#0f172a;padding:20px 24px;border-radius:8px 8px 0 0;display:flex;align-items:center;gap:12px;">
   <div style="color:#fff;font-size:20px;font-weight:700;letter-spacing:1px;">ICO Intelligence</div>
-  <div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:4px;margin-left:auto;">${r.verdict?.replace('_',' ')}</div>
+  <div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:4px;margin-left:auto;">${r.verdict ? r.verdict.replace(/_/g," ") : "SUBMITTED"}</div>
 </div>
 
 <div style="border:1px solid #e2e8f0;border-top:none;padding:24px;border-radius:0 0 8px 8px;">
@@ -76,7 +76,7 @@ function opsEmailHtml(r, av) {
     </tr>
     <tr>
       <td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Approval Score</td>
-      <td style="padding:10px 14px;font-size:14px;font-weight:700;color:${color};">${r.approvalScore}/10</td>
+      <td style="padding:10px 14px;font-size:14px;font-weight:700;color:${color};">${r.approvalScore != null ? r.approvalScore + "/10" : "Pending"}</td>
     </tr>
     ${r.notes ? `<tr style="background:#f8fafc;"><td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">RSM Notes</td><td style="padding:10px 14px;font-size:13px;">${r.notes}</td></tr>` : ''}
     <tr>
@@ -154,7 +154,7 @@ export default async function handler(req, res) {
       // Send email to ICO Ops
       const emailResult = await sendEmail(
         OPS_EMAIL,
-        `[ICO Intelligence] ${reservation.verdict?.replace('_',' ')} — ${reservation.dealerName} (${reservation.zip})`,
+        `[ICO Intelligence] ${(reservation.verdict || "SUBMITTED").replace(/_/g," ")} — ${reservation.dealerName} (${reservation.zip})`,
         opsEmailHtml(reservation, av)
       )
 
