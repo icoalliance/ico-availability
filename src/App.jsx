@@ -815,6 +815,8 @@ export default function App() {
   const [showResSlideout, setShowResSlideout] = useState(false)
   const [showOpsPanel, setShowOpsPanel] = useState(false)
   const [toast, setToast] = useState(null)  // { msg, type }
+  const [opsBarId, setOpsBarId] = useState(() => new URLSearchParams(window.location.search).get('id'))
+  const [opsBarAction, setOpsBarAction] = useState(() => new URLSearchParams(window.location.search).get('ops_action'))
 
   function showToast(msg, type='info') {
     setToast({ msg, type })
@@ -1025,6 +1027,15 @@ export default function App() {
         </div>
       )}
 
+      {opsBarId && (
+        <StickyOpsBar
+          reservationId={opsBarId}
+          action={opsBarAction}
+          reservations={reservations}
+          onDone={(msg) => { setOpsBarId(null); showToast(msg, 'success') }}
+        />
+      )}
+
       {toast && (
         <div className={`toast toast-${toast.type}`} onClick={() => setToast(null)}>
           {toast.msg}
@@ -1066,7 +1077,7 @@ export default function App() {
         <OpsPanel
           reservations={reservations}
           onClose={() => setShowOpsPanel(false)}
-          onUpdated={async (msg) => { await loadReservations(); if (msg) showToast(msg, 'success') }}
+          onUpdated={async (msg) => { await loadReservations(); if (msg) { setShowOpsPanel(false); showToast(msg, 'success') } }}
           opsActionFromUrl={new URLSearchParams(window.location.search).get('ops_action')}
           opsIdFromUrl={new URLSearchParams(window.location.search).get('id')}
         />
@@ -1244,7 +1255,7 @@ export default function App() {
 // ── Approval Likelihood Score ─────────────────────────────────────────────
 function calcApprovalScore(av, desired, dmaRank, totalDmas) {
   if (!desired || desired === 0) return null
-  const { base, best15, best30, best45, hasUnderdeliveryWarning } = av
+  const { base, best15, best30, best45, hasUnderdeliveryWarning, ring15 } = av
   if (base === null) return null
 
   const baseOverage = base < 0 ? Math.abs(base) : 0
@@ -1267,18 +1278,44 @@ function calcApprovalScore(av, desired, dmaRank, totalDmas) {
   // Factor 5: Underdelivery (0-1)
   const f5 = hasUnderdeliveryWarning ? 0 : 1
 
-  const score = Math.round(Math.min(10, Math.max(1, f1 + f2 + f3 + f4 + f5)))
+  // Factor 6: Nearby BC delivery performance within 15mi (0-1)
+  // ICO Ops specifically looks at how existing BCs in the market are delivering
+  // Underdelivering neighbors signal market saturation or process issues
+  let f6 = 0.5  // neutral default when no data
+  let nearbyBCDeliveryNote = null
+  if (ring15 && ring15.length > 0) {
+    const nearbyBCs = ring15.filter(e => e.hasBC && e.odPct !== null)
+    if (nearbyBCs.length > 0) {
+      const avgPct = nearbyBCs.reduce((s, e) => s + (e.odPct || 1), 0) / nearbyBCs.length
+      const underCount = nearbyBCs.filter(e => e.underdelivery).length
+      const overCount = nearbyBCs.filter(e => e.odPct >= 1.0).length
+      if (underCount >= 2 || (underCount > 0 && underCount / nearbyBCs.length > 0.5)) {
+        f6 = 0  // Multiple underdelivering BCs within 15mi — red flag for Ops
+        nearbyBCDeliveryNote = `${underCount} of ${nearbyBCs.length} BCs within 15mi underdelivering — Ops will scrutinize market health`
+      } else if (underCount === 1) {
+        f6 = 0.25  // One underdelivering BC — caution
+        nearbyBCDeliveryNote = `1 BC within 15mi underdelivering — worth noting to Ops`
+      } else if (avgPct >= 1.0) {
+        f6 = 1  // All nearby BCs delivering at or above target
+        nearbyBCDeliveryNote = `Nearby BCs averaging ${Math.round(avgPct * 100)}% of target — healthy market`
+      } else {
+        f6 = 0.5
+      }
+    }
+  }
+
+  const score = Math.round(Math.min(10, Math.max(1, f1 + f2 + f3 + f4 + f5 + f6)))
 
   const bands = [
-    [9, 10, 'Strong',  '#00c896', 'Strong approval candidate — base availability covers the request with healthy market headroom.'],
+    [9, 10, 'Strong',  '#00c896', 'Strong approval candidate — base availability and nearby BC performance support the request.'],
     [7,  8, 'Good',    '#4ade80', 'Good candidate — inner ring availability supports the request. Present to ICO Ops with confidence.'],
     [5,  6, 'Fair',    '#f5a800', 'Approvable with context — availability exists but market constraints require ICO Ops review.'],
-    [3,  4, 'Weak',    '#f97316', 'Weak candidate — significant overage or outer-ring-only coverage makes approval difficult.'],
-    [1,  2, 'Poor',    '#ff4757', 'Unlikely to approve — insufficient availability even with ring boosters.'],
+    [3,  4, 'Weak',    '#f97316', 'Weak candidate — overage, outer-ring-only coverage, or underdelivering neighbors make approval difficult.'],
+    [1,  2, 'Poor',    '#ff4757', 'Unlikely to approve — insufficient availability or significant market health concerns.'],
   ]
   const band = bands.find(([lo, hi]) => score >= lo && score <= hi) || bands[4]
 
-  return { score, label: band[2], color: band[3], rationale: band[4], f1, f2, f3, f4, f5 }
+  return { score, label: band[2], color: band[3], rationale: band[4], f1, f2, f3, f4, f5, f6, nearbyBCDeliveryNote }
 }
 
 function ApprovalScoreCard({ av, desired, dmaRank, totalDmas }) {
@@ -1288,11 +1325,12 @@ function ApprovalScoreCard({ av, desired, dmaRank, totalDmas }) {
   const [showBreakdown, setShowBreakdown] = useState(false)
 
   const factors = [
-    { name: 'Base Availability', val: f1, max: 3 },
-    { name: 'Ring Coverage',     val: f2, max: 3 },
-    { name: 'Overage Ratio',     val: f3, max: 2 },
-    { name: 'DMA Health',        val: f4, max: 1 },
-    { name: 'Delivery Trend',    val: f5, max: 1 },
+    { name: 'Base Availability',     val: f1, max: 3 },
+    { name: 'Ring Coverage',         val: f2, max: 3 },
+    { name: 'Overage Ratio',         val: f3, max: 2 },
+    { name: 'DMA Health',            val: f4, max: 1 },
+    { name: 'Delivery Trend',        val: f5, max: 1 },
+    { name: 'Nearby BC Performance', val: f6, max: 1 },
   ]
 
   return (
@@ -1305,6 +1343,15 @@ function ApprovalScoreCard({ av, desired, dmaRank, totalDmas }) {
         <div className="score-info">
           <div className="score-label" style={{color}}>{label} Approval Likelihood</div>
           <div className="score-rationale">{rationale}</div>
+          {result.nearbyBCDeliveryNote && (
+            <div style={{fontSize:11,marginTop:4,padding:'4px 8px',borderRadius:4,
+              background: result.f6 === 0 ? '#fff0f0' : result.f6 >= 1 ? '#f0fdf4' : '#fffbeb',
+              color: result.f6 === 0 ? 'var(--red)' : result.f6 >= 1 ? '#15803d' : '#92400e',
+              fontStyle:'italic'
+            }}>
+              {result.nearbyBCDeliveryNote}
+            </div>
+          )}
           <button className="score-breakdown-btn" onClick={() => setShowBreakdown(b => !b)}>
             {showBreakdown ? 'Hide breakdown' : 'Show score breakdown'}
           </button>
@@ -2146,6 +2193,113 @@ function OpsPanel({ reservations, onClose, onUpdated, opsActionFromUrl, opsIdFro
                 </table>
               </>
             )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+
+// ── Sticky Ops Action Bar (shown when Ops arrives via email link) ─────────
+function StickyOpsBar({ reservationId, action: suggestedAction, reservations, onDone }) {
+  const [pin, setPin] = useState('')
+  const [pinVerified, setPinVerified] = useState(false)
+  const [opsUser, setOpsUser] = useState(null)
+  const [pinError, setPinError] = useState('')
+  const [declineMode, setDeclineMode] = useState(false)
+  const [declineNotes, setDeclineNotes] = useState('')
+  const [processing, setProcessing] = useState(false)
+  const [done, setDone] = useState(false)
+
+  const reservation = reservations.find(r => r.id === reservationId)
+
+  async function verifyPin() {
+    if (!pin || pin.length < 4) return
+    try {
+      const res = await fetch(`/api/ops?pin=${pin}`)
+      const data = await res.json()
+      if (data.ok) { setOpsUser(data); setPinVerified(true) }
+      else setPinError('Invalid PIN')
+    } catch { setPinError('Connection error') }
+  }
+
+  async function handleAction(action, notes) {
+    setProcessing(true)
+    try {
+      const res = await fetch('/api/ops', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: opsUser.pin, reservationId, action, notes: notes || '' })
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setDone(true)
+        const dealer = reservation?.dealerName || 'dealer'
+        setTimeout(() => onDone(`${action === 'approve' ? '✓' : '✗'} ${dealer} ${action === 'approve' ? 'approved' : 'declined'} — RSM has been notified`), 1500)
+      }
+    } catch(e) { console.error(e) }
+    setProcessing(false)
+  }
+
+  if (!reservation) return null
+
+  const vColors = { APPROVED:'#00c896', APPROVABLE:'#f5a800', REVIEW_REQUIRED:'#f97316', DENIED:'#ff4757' }
+  const vColor = vColors[reservation.verdict] || '#f5a800'
+
+  return (
+    <div className="sticky-ops-bar">
+      <div className="sticky-ops-inner">
+        <div className="sticky-ops-info">
+          <span className="sticky-ops-verdict" style={{background:vColor+'20',color:vColor,border:`1px solid ${vColor}40`}}>
+            {reservation.verdict?.replace(/_/g,' ')}
+          </span>
+          <span className="sticky-ops-dealer">{reservation.dealerName}</span>
+          <span className="sticky-ops-meta">{reservation.zip} · {fmtN(reservation.leadsReserved)} leads · Score {reservation.approvalScore}/10</span>
+        </div>
+
+        {done ? (
+          <div style={{color:'#00c896',fontFamily:'var(--cond)',fontWeight:700,fontSize:13}}>
+            ✓ Action recorded — RSM notified
+          </div>
+        ) : !pinVerified ? (
+          <div className="sticky-ops-pin">
+            <input
+              className="sticky-pin-input"
+              type="password"
+              placeholder="Enter PIN"
+              maxLength={6}
+              value={pin}
+              onChange={e => setPin(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && verifyPin()}
+            />
+            <button className="sticky-pin-btn" onClick={verifyPin} disabled={pin.length < 4}>Verify</button>
+            {pinError && <span style={{color:'var(--red)',fontSize:11}}>{pinError}</span>}
+          </div>
+        ) : declineMode ? (
+          <div className="sticky-ops-pin">
+            <input
+              className="sticky-pin-input"
+              style={{width:200}}
+              placeholder="Reason for decline (optional)"
+              value={declineNotes}
+              onChange={e => setDeclineNotes(e.target.value)}
+              autoFocus
+            />
+            <button className="ops-decline-btn" onClick={() => handleAction('decline', declineNotes)} disabled={processing}>
+              {processing ? 'Declining…' : 'Confirm Decline'}
+            </button>
+            <button className="ops-cancel-btn" onClick={() => setDeclineMode(false)}>Cancel</button>
+          </div>
+        ) : (
+          <div className="sticky-ops-actions">
+            <span style={{fontSize:12,color:'rgba(255,255,255,.5)'}}>Logged in as {opsUser?.name}</span>
+            <button className="ops-approve-btn" onClick={() => handleAction('approve', '')} disabled={processing}>
+              {processing ? 'Approving…' : '✓ Approve'}
+            </button>
+            <button className="ops-decline-btn" onClick={() => setDeclineMode(true)} disabled={processing}>
+              ✗ Decline
+            </button>
           </div>
         )}
       </div>

@@ -604,3 +604,17 @@ header h1 { font-family:var(--cond); font-weight:700; font-size:20px; color:#fff
 .toast-success { background:#00c896; color:#fff; }
 .toast-error { background:#ff4757; color:#fff; }
 .toast-info { background:var(--navy); color:#fff; }
+
+/* ── Sticky Ops Action Bar ── */
+.sticky-ops-bar { position:sticky; top:0; z-index:400; background:var(--navy); border-bottom:2px solid #f5a800; box-shadow:0 4px 20px rgba(0,0,0,.3); }
+.sticky-ops-inner { max-width:1100px; margin:0 auto; padding:10px 20px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+.sticky-ops-info { display:flex; align-items:center; gap:10px; flex:1; flex-wrap:wrap; }
+.sticky-ops-verdict { font-family:var(--cond); font-weight:700; font-size:11px; letter-spacing:.5px; padding:3px 10px; border-radius:4px; white-space:nowrap; }
+.sticky-ops-dealer { font-family:var(--cond); font-weight:700; font-size:15px; color:#fff; }
+.sticky-ops-meta { font-family:var(--mono); font-size:11px; color:rgba(255,255,255,.5); }
+.sticky-ops-pin { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.sticky-pin-input { background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.2); border-radius:5px; padding:6px 10px; color:#fff; font-family:var(--mono); font-size:13px; width:100px; outline:none; }
+.sticky-pin-input::placeholder { color:rgba(255,255,255,.3); }
+.sticky-pin-input:focus { border-color:var(--gold); }
+.sticky-pin-btn { background:var(--gold); color:var(--navy); border:none; border-radius:5px; padding:6px 14px; font-family:var(--cond); font-weight:700; font-size:12px; cursor:pointer; }
+.sticky-ops-actions { display:flex; align-items:center; gap:10px; }
