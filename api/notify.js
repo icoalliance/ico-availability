@@ -21,7 +21,7 @@ async function sendEmail(to, subject, html) {
       'Authorization': `Bearer ${RESEND_KEY}`
     },
     body: JSON.stringify({
-      from: 'ICO Intelligence <noreply@ico-intelligence.coxautoinc.com>',
+      from: 'ICO Intelligence <onboarding@resend.dev>',
       to: [to],
       subject,
       html

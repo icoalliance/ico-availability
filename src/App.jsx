@@ -167,7 +167,7 @@ function ZipRow({ e, baseOverage }) {
 }
 
 // ── Reserve box ────────────────────────────────────────────────────────────
-function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName }) {
+function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, sellerEmail, verdict, approvalScore, av }) {
   const [checked, setChecked] = useState(false)
   const [leads, setLeads] = useState(desired || '')
   const [dealer, setDealer] = useState('')
@@ -209,12 +209,29 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName }) {
     if (!dealer.trim()) { setError('Dealer name is required.'); return }
     setError(''); setLoading(true)
     try {
+      // Determine effective verdict — large requests always go to review
+      const leadsNum = parseInt(leads)
+      const effectiveVerdict = leadsNum >= 600 && verdict !== 'DENIED'
+        ? 'REVIEW_REQUIRED' : verdict
+
       const res = await createReservation({
         zip: zipInfo.zip, city: zipInfo.city, state: zipInfo.state, dma: zipInfo.dma,
-        leadsReserved: parseInt(leads), dealerName: dealer.trim(),
-        notes: notes.trim(), reservedBy: sellerName || 'Unknown'
+        leadsReserved: leadsNum, dealerName: dealer.trim(),
+        notes: notes.trim(), reservedBy: sellerName || 'Unknown',
+        reservedByEmail: sellerEmail || '',
+        verdict: effectiveVerdict, approvalScore: approvalScore || null,
       })
-      setConfirmed(res)
+
+      // Send to ICO Ops if verdict requires it
+      if (effectiveVerdict && effectiveVerdict !== 'DENIED') {
+        fetch('/api/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'submit_to_ops', reservation: res, av })
+        }).catch(e => console.error('Ops notify failed:', e))
+      }
+
+      setConfirmed({ ...res, effectiveVerdict })
       onReserved()
     } catch(e) {
       setError(e.message)
@@ -222,30 +239,42 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName }) {
     setLoading(false)
   }
 
-  if (confirmed) return (
-    <div className="reserve-box">
-      <div className="reserve-confirmed">
-        <div className="reserve-confirmed-icon">✓</div>
-        <div style={{flex:1}}>
-          <strong>{fmtN(confirmed.leadsReserved)} leads reserved</strong> for {confirmed.dealerName} in zip {confirmed.zip}
-          <br /><span style={{fontSize:12,color:'var(--muted)'}}>Expires {fmtDate(confirmed.expiresAt)} · ID: {confirmed.id.slice(-8)}</span>
+  if (confirmed) {
+    const v = confirmed.effectiveVerdict || confirmed.verdict
+    const vColors = { APPROVED:'#00c896', APPROVABLE:'#f5a800', REVIEW_REQUIRED:'#f97316', DENIED:'#ff4757' }
+    const vColor = vColors[v] || 'var(--muted)'
+    const sentToOps = v && v !== 'DENIED'
+    return (
+      <div className="reserve-box">
+        <div className="reserve-confirmed">
+          <div className="reserve-confirmed-icon">✓</div>
+          <div style={{flex:1}}>
+            <strong>{fmtN(confirmed.leadsReserved)} leads reserved</strong> for {confirmed.dealerName} in zip {confirmed.zip}
+            <br /><span style={{fontSize:12,color:'var(--muted)'}}>Expires {fmtDate(confirmed.expiresAt)} · ID: {confirmed.id.slice(-8)}</span>
+          </div>
+          <button className="res-cancel-btn" style={{marginLeft:16,flexShrink:0}}
+            onClick={async () => {
+              await cancelReservation(confirmed.id)
+              setConfirmed(null); setChecked(false); onReserved()
+            }}>Release</button>
         </div>
-        <button
-          className="res-cancel-btn"
-          style={{marginLeft:16,flexShrink:0}}
-          onClick={async () => {
-            await cancelReservation(confirmed.id)
-            setConfirmed(null)
-            setChecked(false)
-            onReserved()
-          }}
-        >Release</button>
+        {v && (
+          <div style={{marginTop:10,padding:'10px 14px',background: vColor+'10',border:`1px solid ${vColor}30`,borderRadius:7}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+              <span style={{fontFamily:'var(--cond)',fontWeight:700,fontSize:11,letterSpacing:1,color:vColor}}>{v.replace('_',' ')}</span>
+              {sentToOps && <span style={{fontSize:11,color:'var(--muted)'}}>· Sent to ICO Ops · Timer started</span>}
+            </div>
+            <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5}}>
+              {v === 'APPROVED' && 'Auto-approved based on availability. ICO Ops has been notified. Proceed with generating the agreement in CPQ.'}
+              {v === 'APPROVABLE' && "Sent to ICO Ops for review. You'll receive an email notification when they respond."}
+              {v === 'REVIEW_REQUIRED' && "Sent to ICO Ops for manual review. You'll receive an email notification when they respond."}
+              {v === 'DENIED' && 'Reservation created but availability is insufficient. Not submitted to ICO Ops.'}
+            </div>
+          </div>
+        )}
       </div>
-      <div style={{fontSize:12,color:'var(--muted)',marginTop:10,padding:'8px 12px',background:'#f8f9fc',borderRadius:6,lineHeight:1.5}}>
-        Changed your mind later? Scroll down to the <strong>Active Reservations</strong> panel and click <strong>Release</strong> next to this entry — leads return to availability immediately.
-      </div>
-    </div>
-  )
+    )
+  }
 
   // Get existing active reservations for this zip with full details
   const existingReservations = reserved.filter(r => r.zip === zipInfo.zip && r.status === 'active')
@@ -781,6 +810,7 @@ export default function App() {
   })
   const [showMarkets, setShowMarkets] = useState(false)
   const [showResSlideout, setShowResSlideout] = useState(false)
+  const [showOpsPanel, setShowOpsPanel] = useState(false)
   const [dataDate, setDataDate] = useState(() => {
     return localStorage.getItem('ico_data_date') || DATA_DATE
   })
@@ -846,9 +876,13 @@ export default function App() {
     if (!sellerName) setShowNamePrompt(true)
   }, [sellerName])
 
-  function saveName(name) {
+  const [sellerEmail, setSellerEmail] = useState(() => localStorage.getItem('ico_seller_email') || '')
+
+  function saveName(name, email) {
     const n = name.trim()
     if (n) { setSellerName(n); localStorage.setItem('ico_seller_name', n) }
+    const e = (email || '').trim()
+    if (e) { setSellerEmail(e); localStorage.setItem('ico_seller_email', e) }
     setShowNamePrompt(false)
   }
 
@@ -928,7 +962,7 @@ export default function App() {
       } else if (best15 < des && best30 < des && best45 < des) {
         verdict='DENIED'; vClass='deny'; vIcon='✗'
       } else if (hasUnderdeliveryWarning) {
-        verdict='REVIEW REQUIRED'; vClass='caution'; vIcon='~'
+        verdict='REVIEW_REQUIRED'; vClass='caution'; vIcon='~'
       } else {
         // Which ring covers the request?
         const bestCovering = best15 >= des ? best15 : best30 >= des ? best30 : best45
@@ -938,12 +972,12 @@ export default function App() {
         if (coveringRing <= 30 && overageRatio <= 1.5) {
           verdict='APPROVABLE'; vClass='caution'; vIcon='~'
         } else {
-          verdict='REVIEW REQUIRED'; vClass='caution'; vIcon='~'
+          verdict='REVIEW_REQUIRED'; vClass='caution'; vIcon='~'
         }
       }
     } else {
       if (base > 0)        { verdict='AVAILABLE';  vClass='approve'; vIcon='✓' }
-      else if (best15 > 0) { verdict=hasUnderdeliveryWarning?'REVIEW REQUIRED':'BOOSTABLE'; vClass='caution'; vIcon='~' }
+      else if (best15 > 0) { verdict=hasUnderdeliveryWarning?'REVIEW_REQUIRED':'BOOSTABLE'; vClass='caution'; vIcon='~' }
       else                 { verdict='OVERSOLD';   vClass='deny';    vIcon='✗' }
     }
   }
@@ -971,6 +1005,7 @@ export default function App() {
             <span style={{fontFamily:'var(--mono)',fontSize:11,color:'rgba(255,255,255,.4)'}}>{sellerName}</span>
             {dataLoading && <span style={{fontSize:11,color:'rgba(255,255,255,.6)',fontFamily:'var(--mono)',marginRight:4}}>⟳ Updating data…</span>}
         <button className="mkt-intel-btn" onClick={() => setShowMarkets(m => !m)}>📊 Market Intel</button>
+            <button className="ops-trigger-btn" onClick={() => setShowOpsPanel(true)} title="ICO Ops Queue">🔐 Ops</button>
             <button className="import-trigger-btn" onClick={() => setShowModal(true)}>↑ Update Data</button>
           </div>
         )}
@@ -991,6 +1026,13 @@ export default function App() {
         </div>
       </div>
 
+      {showOpsPanel && (
+        <OpsPanel
+          reservations={reservations}
+          onClose={() => setShowOpsPanel(false)}
+          onUpdated={async () => { await loadReservations(); setShowOpsPanel(true) }}
+        />
+      )}
       {showResSlideout && (
         <ReservationSlideout
           reservations={reservations}
@@ -1070,7 +1112,7 @@ export default function App() {
               <div className="res-header">
                 <div className={`badge badge-${vClass}`}>
                   <div className="badge-icon">{vIcon}</div>
-                  <div className="badge-label">{verdict}</div>
+                  <div className="badge-label">{verdict?.replace('_',' ')}</div>
                 </div>
                 <div className="loc">
                   <div className="loc-name">{info.city}, {info.state} <span className="loc-zip">{info.zip}</span></div>
@@ -1113,6 +1155,13 @@ export default function App() {
                   reserved={reservations}
                   onReserved={onReserved}
                   sellerName={sellerName}
+                  sellerEmail={sellerEmail}
+                  verdict={verdict}
+                  approvalScore={result?.av ? calcApprovalScore(result.av, des,
+                    Object.entries(dmaSaturation).sort((a,b)=>b[1].avail-a[1].avail).findIndex(([d])=>d===info.dma)+1,
+                    Object.keys(dmaSaturation).length
+                  )?.score : null}
+                  av={av}
                 />
               )}
 
@@ -1777,6 +1826,191 @@ function DealerGroupCard({ searchZip, dma, reservations, onReserved, sellerName,
   )
 }
 
+
+// ── ICO Ops Queue Panel ───────────────────────────────────────────────────
+function OpsPanel({ reservations, onClose, onUpdated }) {
+  const [pin, setPin] = useState('')
+  const [opsUser, setOpsUser] = useState(null)
+  const [pinError, setPinError] = useState('')
+  const [verifying, setVerifying] = useState(false)
+  const [actionId, setActionId] = useState(null)
+  const [declineNotes, setDeclineNotes] = useState('')
+  const [decliningId, setDecliningId] = useState(null)
+  const [processing, setProcessing] = useState(false)
+
+  const pending = reservations.filter(r => r.opsStatus === 'PENDING' && r.status === 'active')
+  const recent = reservations.filter(r => ['APPROVED','DECLINED'].includes(r.opsStatus)).slice(-10).reverse()
+
+  async function verifyPin() {
+    if (!pin || pin.length < 4) return
+    setVerifying(true); setPinError('')
+    try {
+      const res = await fetch(`/api/ops?pin=${pin}`)
+      const data = await res.json()
+      if (data.ok) setOpsUser(data)
+      else setPinError('Invalid PIN. Please try again.')
+    } catch(e) { setPinError('Connection error. Try again.') }
+    setVerifying(false)
+  }
+
+  async function handleAction(reservationId, action, notes) {
+    setProcessing(true)
+    try {
+      const res = await fetch('/api/ops', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: opsUser.pin, reservationId, action, notes: notes || '' })
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setDecliningId(null); setDeclineNotes('')
+        onUpdated()
+      }
+    } catch(e) { console.error('Action failed:', e) }
+    setProcessing(false)
+  }
+
+  const verdictColors = { APPROVED:'#00c896', APPROVABLE:'#f5a800', REVIEW_REQUIRED:'#f97316', DENIED:'#ff4757' }
+
+  return (
+    <div className="slideout-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="slideout-panel">
+        <div className="slideout-header">
+          <div>
+            <div className="slideout-title">🔐 ICO Ops Queue</div>
+            <div className="slideout-sub">{pending.length} pending · {recent.length} recently actioned</div>
+          </div>
+          <button className="slideout-close" onClick={onClose}>✕</button>
+        </div>
+
+        {!opsUser ? (
+          <div style={{padding:32,display:'flex',flexDirection:'column',gap:12,maxWidth:320,margin:'0 auto'}}>
+            <div style={{fontFamily:'var(--cond)',fontWeight:700,fontSize:15,color:'var(--navy)'}}>Enter your Ops PIN</div>
+            <div style={{fontSize:13,color:'var(--muted)'}}>Your PIN identifies you in the response log for reporting purposes.</div>
+            <input
+              className="reserve-input"
+              type="password"
+              placeholder="4-digit PIN"
+              maxLength={6}
+              value={pin}
+              onChange={e => setPin(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && verifyPin()}
+              autoFocus
+              style={{fontSize:20,letterSpacing:6,textAlign:'center'}}
+            />
+            {pinError && <div style={{color:'var(--red)',fontSize:12}}>{pinError}</div>}
+            <button className="reserve-submit-btn" onClick={verifyPin} disabled={verifying || pin.length < 4}>
+              {verifying ? 'Verifying…' : 'Verify PIN'}
+            </button>
+          </div>
+        ) : (
+          <div className="slideout-body">
+            <div style={{background:'#f0fdf4',border:'1px solid #86efac',borderRadius:7,padding:'8px 14px',marginBottom:16,fontSize:13,color:'#15803d'}}>
+              ✓ Logged in as <strong>{opsUser.name}</strong>
+            </div>
+
+            {/* Pending queue */}
+            <div style={{fontFamily:'var(--cond)',fontWeight:700,fontSize:11,letterSpacing:1.5,textTransform:'uppercase',color:'var(--muted)',marginBottom:10}}>
+              Pending Review ({pending.length})
+            </div>
+
+            {pending.length === 0 ? (
+              <div style={{fontSize:13,color:'var(--muted)',fontStyle:'italic',marginBottom:24}}>No pending reservations — you're all caught up.</div>
+            ) : (
+              <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:24}}>
+                {pending.map(r => {
+                  const vColor = verdictColors[r.verdict] || 'var(--muted)'
+                  const elapsed = r.submittedAt
+                    ? Math.round((Date.now() - new Date(r.submittedAt).getTime()) / 60000)
+                    : null
+                  return (
+                    <div key={r.id} className="ops-card">
+                      <div className="ops-card-header">
+                        <div>
+                          <div className="ops-dealer-name">{r.dealerName}</div>
+                          <div className="ops-dealer-meta">{r.zip} {r.city}, {r.state} · {r.dma}</div>
+                        </div>
+                        <div style={{textAlign:'right'}}>
+                          <div style={{fontFamily:'var(--mono)',fontWeight:700,fontSize:18,color:vColor}}>{fmtN(r.leadsReserved)}</div>
+                          <div style={{fontSize:11,color:'var(--muted)'}}>leads/mo</div>
+                        </div>
+                      </div>
+                      <div className="ops-card-meta">
+                        <span className="ops-verdict-badge" style={{background:vColor+'15',color:vColor,border:`1px solid ${vColor}30`}}>
+                          {r.verdict?.replace('_',' ')}
+                        </span>
+                        <span style={{fontSize:11,color:'var(--muted)'}}>Score: {r.approvalScore}/10</span>
+                        <span style={{fontSize:11,color:'var(--muted)'}}>By: {r.reservedBy}</span>
+                        {elapsed !== null && (
+                          <span style={{fontSize:11,color: elapsed > 30 ? 'var(--red)' : elapsed > 15 ? '#f5a800' : 'var(--green)', fontWeight:600}}>
+                            ⏱ {elapsed}m elapsed
+                          </span>
+                        )}
+                      </div>
+                      {r.notes && <div style={{fontSize:12,color:'var(--muted)',margin:'6px 0',fontStyle:'italic'}}>"{r.notes}"</div>}
+
+                      {decliningId === r.id ? (
+                        <div style={{marginTop:8,display:'flex',flexDirection:'column',gap:6}}>
+                          <input className="reserve-input" placeholder="Reason for decline (optional)"
+                            value={declineNotes} onChange={e => setDeclineNotes(e.target.value)} autoFocus />
+                          <div style={{display:'flex',gap:8}}>
+                            <button className="ops-decline-btn" onClick={() => handleAction(r.id, 'decline', declineNotes)} disabled={processing}>
+                              Confirm Decline
+                            </button>
+                            <button className="ops-cancel-btn" onClick={() => setDecliningId(null)}>Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="ops-actions">
+                          <button className="ops-approve-btn" onClick={() => handleAction(r.id, 'approve', '')} disabled={processing}>
+                            ✓ Approve
+                          </button>
+                          <button className="ops-decline-btn" onClick={() => setDecliningId(r.id)}>
+                            ✗ Decline
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Recently actioned */}
+            {recent.length > 0 && (
+              <>
+                <div style={{fontFamily:'var(--cond)',fontWeight:700,fontSize:11,letterSpacing:1.5,textTransform:'uppercase',color:'var(--muted)',marginBottom:10}}>
+                  Recently Actioned ({recent.length})
+                </div>
+                <table className="comp-table" style={{fontSize:12}}>
+                  <thead><tr>
+                    <th>Dealer</th><th>Zip</th><th className="th-r">Leads</th>
+                    <th>Status</th><th>By</th><th className="th-r">Response</th>
+                  </tr></thead>
+                  <tbody>
+                    {recent.map(r => (
+                      <tr key={r.id}>
+                        <td style={{fontWeight:600}}>{r.dealerName}</td>
+                        <td className="td-mono">{r.zip}</td>
+                        <td className="td-right td-num">{fmtN(r.leadsReserved)}</td>
+                        <td style={{color: r.opsStatus === 'APPROVED' ? 'var(--green)' : 'var(--red)', fontWeight:700, fontSize:11}}>
+                          {r.opsStatus}
+                        </td>
+                        <td className="td-dim">{r.opsRespondedBy || '—'}</td>
+                        <td className="td-right td-dim">{r.elapsedMinutes !== null ? r.elapsedMinutes+'m' : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Bug 5: Data freshness footer ──────────────────────────────────────────
 function DataFreshnessFooter({ dataDate: dateDateStr }) {
   const displayDate = dateDateStr || DATA_DATE
@@ -2078,11 +2312,17 @@ function TenureInsightForZip({ dma, searchZip }) {
 }
 
 function NameForm({ onSave }) {
-  const [val, setVal] = useState('')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
   return (
-    <div style={{display:'flex',gap:8,marginTop:8}}>
-      <input className="reserve-input" style={{flex:1}} placeholder="Your name" value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&onSave(val)} autoFocus />
-      <button className="reserve-submit-btn" onClick={() => onSave(val)}>Save</button>
+    <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:8}}>
+      <input className="reserve-input" placeholder="Your full name" value={name}
+        onChange={e=>setName(e.target.value)} autoFocus />
+      <input className="reserve-input" placeholder="Work email (for approval notifications)"
+        value={email} onChange={e=>setEmail(e.target.value)}
+        onKeyDown={e=>e.key==='Enter'&&name.trim()&&onSave(name,email)} />
+      <button className="reserve-submit-btn" disabled={!name.trim()}
+        onClick={() => onSave(name, email)}>Get Started</button>
     </div>
   )
 }
