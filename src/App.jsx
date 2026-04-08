@@ -829,6 +829,7 @@ export default function App() {
   const [liveDealerMap, setLiveDealerMap] = useState(null)
   const [dataLoading, setDataLoading] = useState(false)
   const [showNamePrompt, setShowNamePrompt] = useState(false)
+  const [sellerEmail, setSellerEmail] = useState(() => localStorage.getItem('ico_seller_email') || '')
   // coordsMap imported below
 
   const loadReservations = useCallback(async () => {
@@ -907,8 +908,6 @@ export default function App() {
   useEffect(() => {
     if (!sellerName) setShowNamePrompt(true)
   }, [sellerName])
-
-  const [sellerEmail, setSellerEmail] = useState(() => localStorage.getItem('ico_seller_email') || '')
 
   function saveName(name, email) {
     const n = name.trim()
