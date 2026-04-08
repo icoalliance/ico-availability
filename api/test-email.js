@@ -14,7 +14,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         from: 'ICO Intelligence <onboarding@resend.dev>',
-        to: ['brian.fox@coxautoinc.com'],
+        to: ['blvwfox@gmail.com'],
         subject: 'ICO Intelligence — Email Test',
         html: '<h2>✓ Email is working!</h2><p>If you received this, the Resend integration is configured correctly.</p>'
       })

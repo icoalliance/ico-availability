@@ -6,7 +6,7 @@ const kv = new Redis({
 })
 
 const RESEND_KEY = process.env.RESEND_API_KEY
-const OPS_EMAIL = 'brian.fox@coxautoinc.com'
+const OPS_EMAIL = 'blvwfox@gmail.com'
 const APP_URL = 'https://ico-availability.vercel.app'
 
 async function sendEmail(to, subject, html) {
