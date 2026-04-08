@@ -79,11 +79,31 @@ function opsEmailHtml(r, av) {
       <td style="padding:10px 14px;font-size:14px;font-weight:700;color:${color};">${r.approvalScore != null ? r.approvalScore + "/10" : "Pending"}</td>
     </tr>
     ${r.notes ? `<tr style="background:#f8fafc;"><td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">RSM Notes</td><td style="padding:10px 14px;font-size:13px;">${r.notes}</td></tr>` : ''}
+    ${av ? `
+    <tr><td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Base Availability</td>
+    <td style="padding:10px 14px;font-size:14px;font-weight:700;color:${(av.base || 0) >= 0 ? '#00c896' : '#ff4757'}">${av.base != null ? av.base.toLocaleString() : '—'} leads</td></tr>
+    <tr style="background:#f8fafc;"><td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Best Ring (0–15mi)</td>
+    <td style="padding:10px 14px;font-size:14px;">${av.best15 != null ? av.best15.toLocaleString() : '—'} available</td></tr>
+    <tr><td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Best Ring (15–30mi)</td>
+    <td style="padding:10px 14px;font-size:14px;">${av.best30 != null ? av.best30.toLocaleString() : '—'} available</td></tr>
+    <tr style="background:#f8fafc;"><td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Best Ring (30–45mi)</td>
+    <td style="padding:10px 14px;font-size:14px;">${av.best45 != null ? av.best45.toLocaleString() : '—'} available</td></tr>
+    ` : ''}
     <tr>
       <td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">RSM</td>
       <td style="padding:10px 14px;font-size:13px;">${r.reservedBy} — <a href="mailto:${r.reservedByEmail}">${r.reservedByEmail}</a></td>
     </tr>
   </table>
+
+  <!-- Verdict context -->
+  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:16px;">
+    <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Why ${r.verdict ? r.verdict.replace(/_/g,' ') : 'this verdict'}?</div>
+    <div style="font-size:13px;color:#1e293b;line-height:1.6;">
+      ${r.verdict === 'APPROVED' ? 'Base zip availability covers the requested lead volume without needing neighboring zip support. Strong candidate.' : ''}
+      ${r.verdict === 'APPROVABLE' ? `Base zip is over-allocated by ${av && av.base < 0 ? Math.abs(av.base).toLocaleString() : '?'} leads, but a neighboring zip within 15–30 miles has sufficient availability to cover the request. The ICO Ops puzzle approach supports approval — please verify the ring booster zip and confirm overlap is sufficient.` : ''}
+      ${r.verdict === 'REVIEW_REQUIRED' ? `${r.leadsReserved >= 600 ? 'Request is for 600+ leads — all large opportunities require manual ICO Ops review to ensure dealer readiness and process alignment. ' : ''}${av && av.base < 0 ? `Base zip is over-allocated by ${Math.abs(av.base).toLocaleString()} leads. ` : ''}${av && av.best15 === 0 && av.best30 === 0 ? 'Inner rings show no availability — only the 30–45mi outer ring has capacity. Radius overlap requires manual assessment.' : 'Overage ratio or market constraints require manual review.'}` : ''}
+    </div>
+  </div>
 
   ${!isAuto ? `
   <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;margin-bottom:20px;">
@@ -104,6 +124,9 @@ function opsEmailHtml(r, av) {
   </div>
   `}
 
+  <div style="font-size:11px;color:#94a3b8;text-align:center;margin-bottom:8px;">
+    Note: ICO Intelligence shows current market availability. The RSM's reservation is visible in the Active Reservations panel.
+  </div>
   <a href="${zipUrl}" style="display:block;text-align:center;background:#0f172a;color:#fff;padding:12px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;">Open ${r.zip} in ICO Intelligence →</a>
 
   <p style="margin:16px 0 0;font-size:11px;color:#94a3b8;text-align:center;">

@@ -577,3 +577,30 @@ header h1 { font-family:var(--cond); font-weight:700; font-size:20px; color:#fff
 .import-msg-success { color:#15803d; font-weight:600; }
 .import-msg-error { color:var(--red); }
 .import-modal-footer { display:flex; justify-content:space-between; align-items:center; margin-top:20px; padding-top:16px; border-top:1px solid var(--border); gap:10px; }
+
+/* ── Ops Queue Panel ── */
+.ops-trigger-btn { background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15); border-radius:6px; padding:6px 12px; font-family:var(--cond); font-weight:700; font-size:11px; color:rgba(255,255,255,.6); cursor:pointer; letter-spacing:.5px; }
+.ops-trigger-btn:hover { background:rgba(255,255,255,.15); color:#fff; }
+.ops-card { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:14px; }
+.ops-card-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; gap:12px; }
+.ops-dealer-name { font-weight:700; font-size:14px; color:var(--navy); margin-bottom:3px; }
+.ops-dealer-meta { font-size:11px; color:var(--muted); font-family:var(--mono); }
+.ops-card-meta { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
+.ops-verdict-badge { font-family:var(--cond); font-weight:700; font-size:10px; letter-spacing:.5px; padding:2px 8px; border-radius:4px; }
+.ops-actions { display:flex; gap:8px; margin-top:10px; }
+.ops-approve-btn { background:#00c896; color:#fff; border:none; border-radius:6px; padding:8px 20px; font-family:var(--cond); font-weight:700; font-size:12px; cursor:pointer; }
+.ops-approve-btn:hover { background:#00a87a; }
+.ops-approve-btn:disabled { opacity:.5; cursor:not-allowed; }
+.ops-decline-btn { background:#fff0f0; color:var(--red); border:1px solid #fecaca; border-radius:6px; padding:8px 20px; font-family:var(--cond); font-weight:700; font-size:12px; cursor:pointer; }
+.ops-decline-btn:hover { background:#fee2e2; }
+.ops-cancel-btn { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:8px 14px; font-size:12px; cursor:pointer; color:var(--muted); }
+
+/* Name prompt subtitle */
+.import-modal-sub { font-size:13px; color:var(--muted); margin-bottom:4px; line-height:1.5; }
+
+/* ── Toast Notifications ── */
+.toast { position:fixed; bottom:24px; right:24px; z-index:9999; padding:14px 20px; border-radius:8px; font-size:14px; font-weight:600; font-family:var(--cond); box-shadow:0 8px 32px rgba(0,0,0,.2); cursor:pointer; animation:toastIn .3s ease; max-width:380px; line-height:1.4; }
+@keyframes toastIn { from { transform:translateY(20px); opacity:0; } to { transform:translateY(0); opacity:1; } }
+.toast-success { background:#00c896; color:#fff; }
+.toast-error { background:#ff4757; color:#fff; }
+.toast-info { background:var(--navy); color:#fff; }

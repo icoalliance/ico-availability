@@ -552,7 +552,7 @@ function ReservationRow({ r, onCancel }) {
       <td>{r.dealerName || '—'}</td>
       <td className="td-dim">{r.notes || '—'}</td>
       <td className="td-dim">{r.reservedBy || '—'}</td>
-      <td className="td-mono td-dim">{fmtDate(r.reservedAt)}</td>
+      <td className="td-mono td-dim">{r.createdAt ? fmtDate(r.createdAt) : "—"}</td>
       <td className={urgency}>
         {r.status === 'active'
           ? <>{fmtDate(r.expiresAt)}{days <= 7 && <span className="res-days"> ({days}d)</span>}</>
@@ -814,6 +814,12 @@ export default function App() {
   const [showMarkets, setShowMarkets] = useState(false)
   const [showResSlideout, setShowResSlideout] = useState(false)
   const [showOpsPanel, setShowOpsPanel] = useState(false)
+  const [toast, setToast] = useState(null)  // { msg, type }
+
+  function showToast(msg, type='info') {
+    setToast({ msg, type })
+    setTimeout(() => setToast(null), 6000)
+  }
   const [dataDate, setDataDate] = useState(() => {
     return localStorage.getItem('ico_data_date') || DATA_DATE
   })
@@ -836,17 +842,24 @@ export default function App() {
 
   useEffect(() => { loadReservations() }, [loadReservations])
 
-  // Auto-run check if URL has zip param (from email links)
+  // Handle URL params (from email links)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const paramZip = params.get('zip')
     const paramLeads = params.get('leads')
+    const opsAction = params.get('ops_action')
+    const opsId = params.get('id')
+
     if (paramZip) {
-      // Small delay to let data load first
       setTimeout(() => {
         if (paramLeads) setDesired(paramLeads)
         runCheck(paramZip)
       }, 800)
+    }
+
+    // Ops approve/decline from email link — open ops panel automatically
+    if (opsAction && opsId) {
+      setTimeout(() => setShowOpsPanel(true), 500)
     }
   }, [])
 
@@ -1012,6 +1025,12 @@ export default function App() {
         </div>
       )}
 
+      {toast && (
+        <div className={`toast toast-${toast.type}`} onClick={() => setToast(null)}>
+          {toast.msg}
+        </div>
+      )}
+
       {showModal && <UpdateModal onClose={() => setShowModal(false)} onDataUpdated={(date, liveMat, liveDealer) => { setDataDate(date); localStorage.setItem('ico_data_date', date); if (liveMat) setLiveMatMap(liveMat); if (liveDealer) setLiveDealerMap(liveDealer) }} />}
 
       <header>
@@ -1022,7 +1041,7 @@ export default function App() {
             <span style={{fontFamily:'var(--mono)',fontSize:11,color:'rgba(255,255,255,.4)'}}>{sellerName}</span>
             {dataLoading && <span style={{fontSize:11,color:'rgba(255,255,255,.6)',fontFamily:'var(--mono)',marginRight:4}}>⟳ Updating data…</span>}
         <button className="mkt-intel-btn" onClick={() => setShowMarkets(m => !m)}>📊 Market Intel</button>
-            <button className="ops-trigger-btn" onClick={() => setShowOpsPanel(true)} title="ICO Ops Queue">🔐 Ops Queue</button>
+            <button className="import-trigger-btn" onClick={() => setShowOpsPanel(true)}>🔐 Ops Queue</button>
             <button className="import-trigger-btn" onClick={() => setShowModal(true)}>↑ Update Data</button>
           </div>
         )}
@@ -1047,7 +1066,9 @@ export default function App() {
         <OpsPanel
           reservations={reservations}
           onClose={() => setShowOpsPanel(false)}
-          onUpdated={async () => { await loadReservations(); setShowOpsPanel(true) }}
+          onUpdated={async (msg) => { await loadReservations(); if (msg) showToast(msg, 'success') }}
+          opsActionFromUrl={new URLSearchParams(window.location.search).get('ops_action')}
+          opsIdFromUrl={new URLSearchParams(window.location.search).get('id')}
         />
       )}
       {showResSlideout && (
@@ -1936,7 +1957,7 @@ function PinManager({ opsUser }) {
 }
 
 // ── ICO Ops Queue Panel ───────────────────────────────────────────────────
-function OpsPanel({ reservations, onClose, onUpdated }) {
+function OpsPanel({ reservations, onClose, onUpdated, opsActionFromUrl, opsIdFromUrl }) {
   const [pin, setPin] = useState('')
   const [opsUser, setOpsUser] = useState(null)
   const [pinError, setPinError] = useState('')
@@ -1955,7 +1976,13 @@ function OpsPanel({ reservations, onClose, onUpdated }) {
     try {
       const res = await fetch(`/api/ops?pin=${pin}`)
       const data = await res.json()
-      if (data.ok) setOpsUser(data)
+      if (data.ok) {
+        setOpsUser(data)
+        // Auto-process if came from email link
+        if (opsActionFromUrl && opsIdFromUrl) {
+          setTimeout(() => handleAction(opsIdFromUrl, opsActionFromUrl, ''), 300)
+        }
+      }
       else setPinError('Invalid PIN. Please try again.')
     } catch(e) { setPinError('Connection error. Try again.') }
     setVerifying(false)
@@ -1972,7 +1999,11 @@ function OpsPanel({ reservations, onClose, onUpdated }) {
       const data = await res.json()
       if (data.ok) {
         setDecliningId(null); setDeclineNotes('')
-        onUpdated()
+        const dealer = data.reservation?.dealerName || 'dealer'
+        const msg = action === 'approve'
+          ? `✓ ${dealer} approved — RSM has been notified`
+          : `✗ ${dealer} declined — RSM has been notified`
+        onUpdated(msg)
       }
     } catch(e) { console.error('Action failed:', e) }
     setProcessing(false)
