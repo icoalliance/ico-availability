@@ -2051,7 +2051,9 @@ function OpsPanel({ reservations, onClose, onUpdated, opsActionFromUrl, opsIdFro
           : `✗ ${dealer} declined — RSM has been notified`
         onUpdated(msg)
       }
-    } catch(e) { console.error('Action failed:', e) }
+    } catch(e) {
+      console.error('Action failed:', e)
+    }
     setProcessing(false)
   }
 

@@ -23,7 +23,8 @@ export default async function handler(req, res) {
     const { pin } = req.query
     if (!pin) return res.status(400).json({ error: 'PIN required' })
     try {
-      const pins = await kv.get(OPS_PINS_KEY) || DEFAULT_PINS
+      const storedPins = await kv.get(OPS_PINS_KEY) || {}
+      const pins = { ...DEFAULT_PINS, ...storedPins }  // always include defaults
       const name = pins[pin]
       if (!name) return res.status(401).json({ error: 'Invalid PIN' })
       return res.status(200).json({ ok: true, name, pin })
@@ -39,7 +40,8 @@ export default async function handler(req, res) {
 
     try {
       // Verify PIN
-      const pins = await kv.get(OPS_PINS_KEY) || DEFAULT_PINS
+      const storedPins = await kv.get(OPS_PINS_KEY) || {}
+      const pins = { ...DEFAULT_PINS, ...storedPins }  // always include defaults
       const opsName = pins[pin]
       if (!opsName) return res.status(401).json({ error: 'Invalid PIN' })
 
