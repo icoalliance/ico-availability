@@ -222,8 +222,9 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, seller
         verdict: effectiveVerdict, approvalScore: approvalScore || null,
       })
 
-      // Send to ICO Ops if verdict requires it
-      if (effectiveVerdict && effectiveVerdict !== 'DENIED') {
+      // Send to ICO Ops only for real BC verdicts
+      const opsVerdicts = ['APPROVED','APPROVABLE','REVIEW_REQUIRED']
+      if (opsVerdicts.includes(effectiveVerdict)) {
         fetch('/api/notify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
