@@ -30,8 +30,9 @@ function checkUnderdelivery(de) {
   return { flag: under.length >= 2, months: under }
 }
 
-export function calcAvailability(zip, reservations = []) {
-  const rec = matMap[zip]
+export function calcAvailability(zip, reservations = [], overrideMap = null) {
+  const activeMap = overrideMap || matMap
+  const rec = activeMap[zip]
   if (!rec) return null
 
   const sc = coordsMap[zip]
@@ -52,7 +53,7 @@ export function calcAvailability(zip, reservations = []) {
   if (!sc) return { base, best15:0, best30:0, best45:0, ring15:[], ring30:[], ring45:[], reserved:totalReserved, baseOverage }
 
   const ring15 = [], ring30 = [], ring45 = []
-  const keys = Object.keys(matMap)
+  const keys = Object.keys(activeMap)
 
   for (const z of keys) {
     if (z === zip) continue
@@ -118,8 +119,9 @@ export function calcAvailability(zip, reservations = []) {
   }
 }
 
-export function getZipInfo(zip) {
-  const rec = matMap[zip]
+export function getZipInfo(zip, overrideMap = null) {
+  const activeMap = overrideMap || matMap
+  const rec = activeMap[zip]
   if (!rec) return null
   return { zip, city:rec[0], state:rec[1], dma:rec[2], target:rec[3], avail:rec[4] }
 }

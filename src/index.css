@@ -565,3 +565,15 @@ header h1 { font-family:var(--cond); font-weight:700; font-size:20px; color:#fff
   .group-summary-row { gap:10px; }
   .group-leads-input { width:60px; }
 }
+
+/* ── Update Data Modal — improved ── */
+.import-file-section { border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:12px; }
+.import-file-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
+.import-file-label { font-family:var(--cond); font-weight:700; font-size:13px; color:var(--navy); margin-bottom:3px; }
+.import-file-desc { font-size:11px; color:var(--muted); line-height:1.4; }
+.import-file-freq { font-family:var(--mono); font-size:10px; background:var(--bg); padding:3px 8px; border-radius:4px; color:var(--muted); white-space:nowrap; margin-left:10px; }
+.import-msg { font-size:12px; line-height:1.4; flex:1; }
+.import-msg-info { color:#1d4ed8; }
+.import-msg-success { color:#15803d; font-weight:600; }
+.import-msg-error { color:var(--red); }
+.import-modal-footer { display:flex; justify-content:space-between; align-items:center; margin-top:20px; padding-top:16px; border-top:1px solid var(--border); gap:10px; }

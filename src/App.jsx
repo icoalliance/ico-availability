@@ -539,9 +539,10 @@ function ReservationRow({ r, onCancel }) {
 }
 
 // ── Dealer table ───────────────────────────────────────────────────────────
-function DealerTable({ dma, searchZip }) {
+function DealerTable({ dma, searchZip, liveDealerMap }) {
   const cm = coordsMap
-  const dealers = dealerMap[dma] || []
+  const activeDealerMap = liveDealerMap || dealerMap
+  const dealers = activeDealerMap[dma] || []
   if (!dealers.length) return null
 
   const sc = cm[searchZip]
@@ -646,63 +647,126 @@ function DealerTable({ dma, searchZip }) {
 // ── Update Data modal ──────────────────────────────────────────────────────
 function UpdateModal({ onClose, onDataUpdated }) {
   const [msgs, setMsgs] = useState({})
+  const [uploading, setUploading] = useState({})
+
   function setMsg(k, m, t) { setMsgs(p => ({...p, [k]: {m, t}})) }
 
-  function handleFile(ft, file) {
+  async function handleFile(ft, file) {
     if (!file) return
-    setMsg(ft, 'Processing…', 'info')
-    const reader = new FileReader()
-    reader.onload = e => {
-      try {
-        const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'})
-        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, defval:null})
-        const today = new Date().toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'2-digit'})
-        setMsg(ft, `✓ ${rows.length.toLocaleString()} rows loaded — data date updated to ${today}`, 'success')
-        if (ft === 'mat' && onDataUpdated) onDataUpdated(today)
-      } catch(err) {
-        setMsg(ft, '✗ ' + err.message, 'error')
+    setUploading(p => ({...p, [ft]: true}))
+    setMsg(ft, 'Reading file…', 'info')
+
+    try {
+      // Read file as base64
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result.split(',')[1])
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+
+      setMsg(ft, 'Uploading and processing…', 'info')
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileData: base64, fileType: ft, fileName: file.name })
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Upload failed')
       }
+
+      const result = await res.json()
+
+      if (ft === 'mat') {
+        setMsg(ft, `✓ ${result.zips.toLocaleString()} zips loaded from ${file.name} — data date updated to ${result.date}`, 'success')
+        // Fetch the new live data immediately so the app updates without refresh
+        const matRes = await fetch('/api/matdata?type=mat')
+        if (matRes.ok) {
+          const { matMap: liveMat, meta } = await matRes.json()
+          onDataUpdated(result.date, liveMat)
+        } else {
+          onDataUpdated(result.date, null)
+        }
+      } else if (ft === 'dealer') {
+        setMsg(ft, `✓ ${result.dealers.toLocaleString()} dealers across ${result.dmas} DMAs loaded — data date updated to ${result.date}`, 'success')
+        const dealerRes = await fetch('/api/matdata?type=dealer')
+        if (dealerRes.ok) {
+          const { dealerMap: liveDealer } = await dealerRes.json()
+          onDataUpdated(result.date, null, liveDealer)
+        } else {
+          onDataUpdated(result.date, null, null)
+        }
+      } else if (ft === 'dealerList') {
+        setMsg(ft, `✓ ${result.zips.toLocaleString()} zip performance records loaded — data date updated to ${result.date}`, 'success')
+        onDataUpdated(result.date, null, null)
+      }
+    } catch(e) {
+      setMsg(ft, `✗ Error: ${e.message}`, 'error')
     }
-    reader.readAsArrayBuffer(file)
+    setUploading(p => ({...p, [ft]: false}))
   }
 
-  const rows = [
-    { key:'mat', label:'Opportunity Finder OLR', badge:'DAILY', badgeColor:'#dc2626', desc:'Download daily from Power BI (e.g. Opportunity Finder OLR_3_23.xlsx). Contains zip-level available leads and BC targets.' },
-    { key:'dealer', label:'Dealer Export', badge:'AS NEEDED', badgeColor:'#c8860a', desc:'Export when BCs are added or cancelled (e.g. Dealer_Export.xlsx).' },
-    { key:'list', label:'Dealer List (Performance)', badge:'MONTHLY', badgeColor:'var(--muted)', desc:'Export the Dealer List tab monthly for updated leads delivered and % of target.' },
-    { key:'lms', label:'Local Market Sheet', badge:'AS NEEDED', badgeColor:'#7c3aed', desc:'Export from Power BI for a specific zip + radius. Used to validate real consumer offer volume and confirm market demand before approval.' },
+  const files = [
+    { key: 'mat', label: 'Opportunity Finder OLR', freq: 'Daily', desc: 'Updates all availability numbers across all 40,651 zips' },
+    { key: 'dealer', label: 'Dealer Export', freq: 'As needed', desc: 'Updates active buying center list and dealer details' },
+    { key: 'dealerList', label: 'Dealer List (Performance)', freq: 'Monthly', desc: 'Updates Dec/Jan/Feb/Mar delivery data and trend arrows' },
   ]
 
   return (
-    <div className="import-modal-overlay open" onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="import-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="import-modal">
-        <div className="import-modal-title">Update Data</div>
-        <div className="import-modal-sub">Data files are built into the app at deployment time. To refresh with new exports, update the source files and redeploy via GitHub. The notes below show which file to replace for each data type.</div>
-        {rows.map(({key, label, badge, badgeColor, desc}) => (
-          <div key={key} className="import-row">
-            <div className="import-row-title">
-              {label} <span style={{color:badgeColor,fontSize:10,marginLeft:6}}>{badge}</span>
+        <div className="import-modal-header">
+          <div className="import-modal-title">↑ Update Data</div>
+          <button className="import-close-btn" onClick={onClose}>✕</button>
+        </div>
+        <div style={{fontSize:13,color:'var(--muted)',marginBottom:20,lineHeight:1.5}}>
+          Upload updated source files below. Data processes instantly — no redeploy needed. All sellers will see updated numbers immediately after upload.
+        </div>
+
+        {files.map(f => (
+          <div key={f.key} className="import-file-section">
+            <div className="import-file-header">
+              <div>
+                <div className="import-file-label">{f.label}</div>
+                <div className="import-file-desc">{f.desc}</div>
+              </div>
+              <div className="import-file-freq">{f.freq}</div>
             </div>
-            <div className="import-row-desc">{desc}</div>
             <div className="import-file-row">
-              <label className="imp-btn" style={{cursor:'pointer'}}>
-                Choose File
-                <input type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={e => handleFile(key, e.target.files[0])} />
+              <label className="imp-btn">
+                {uploading[f.key] ? 'Processing…' : 'Choose File'}
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  style={{display:'none'}}
+                  disabled={uploading[f.key]}
+                  onChange={e => { if (e.target.files[0]) handleFile(f.key, e.target.files[0]) }}
+                />
               </label>
-              {msgs[key] && <span className={`imp-msg imp-msg-${msgs[key].t}`}>{msgs[key].m}</span>}
+              {msgs[f.key] && (
+                <div className={`import-msg import-msg-${msgs[f.key].t}`}>
+                  {msgs[f.key].m}
+                </div>
+              )}
             </div>
           </div>
         ))}
+
         <div className="import-modal-footer">
-          <div className="import-footer-note">Files are processed locally — nothing is uploaded.</div>
-          <button className="import-close-btn" onClick={onClose}>Done</button>
+          <div style={{fontSize:11,color:'var(--muted)'}}>
+            Files are processed server-side and stored securely. Data is shared across all sellers instantly.
+          </div>
+          <button className="import-close-btn" onClick={onClose}>Close</button>
         </div>
       </div>
     </div>
   )
 }
 
-// ── Main App ───────────────────────────────────────────────────────────────
+
 export default function App() {
   const [zip, setZip] = useState('')
   const [desired, setDesired] = useState('')
@@ -720,6 +784,9 @@ export default function App() {
   const [dataDate, setDataDate] = useState(() => {
     return localStorage.getItem('ico_data_date') || DATA_DATE
   })
+  const [liveMatMap, setLiveMatMap] = useState(null)
+  const [liveDealerMap, setLiveDealerMap] = useState(null)
+  const [dataLoading, setDataLoading] = useState(false)
   const [showNamePrompt, setShowNamePrompt] = useState(false)
   // coordsMap imported below
 
@@ -735,6 +802,44 @@ export default function App() {
   }, [])
 
   useEffect(() => { loadReservations() }, [loadReservations])
+
+  // Load live data from Redis on startup if available
+  useEffect(() => {
+    async function loadLiveData() {
+      try {
+        const metaRes = await fetch('/api/matdata?type=meta')
+        if (!metaRes.ok) return
+        const meta = await metaRes.json()
+        if (!meta.mat && !meta.dealer) return  // nothing in Redis yet
+
+        setDataLoading(true)
+
+        // Fetch all live data in parallel
+        const fetches = []
+        if (meta.mat) fetches.push(fetch('/api/matdata?type=mat').then(r => r.ok ? r.json() : null).catch(() => null))
+        else fetches.push(Promise.resolve(null))
+        if (meta.dealer) fetches.push(fetch('/api/matdata?type=dealer').then(r => r.ok ? r.json() : null).catch(() => null))
+        else fetches.push(Promise.resolve(null))
+
+        const [matResult, dealerResult] = await Promise.all(fetches)
+
+        if (matResult?.matMap) {
+          setLiveMatMap(matResult.matMap)
+          setDataDate(matResult.meta.date)
+          localStorage.setItem('ico_data_date', matResult.meta.date)
+        }
+        if (dealerResult?.dealerMap) {
+          setLiveDealerMap(dealerResult.dealerMap)
+        }
+
+        setDataLoading(false)
+      } catch(e) {
+        console.log('No live data available, using bundled data')
+        setDataLoading(false)
+      }
+    }
+    loadLiveData()
+  }, [])
 
   // Ask for seller name once
   useEffect(() => {
@@ -762,9 +867,10 @@ export default function App() {
     let z = rawZip.trim()
     while (z.length < 5) z = '0' + z
     if (!/^\d{4,5}$/.test(rawZip.trim())) { setError('Please enter a valid 4 or 5-digit zip code.'); return }
-    const info = getZipInfo(z)
+    const activeMap = liveMatMap || matMap
+    const info = getZipInfo(z, activeMap)
     if (!info) { setError(`Zip code ${z} was not found in the current dataset.`); return }
-    const av = calcAvailability(z, reservations)
+    const av = calcAvailability(z, reservations, activeMap)
     const des = desired ? parseInt(desired, 10) : null
     // Compute nearby whitespace from precomputed top-2000 list (fast — no 40k loop)
     const sc = coordsMap[z]
@@ -855,7 +961,7 @@ export default function App() {
         </div>
       )}
 
-      {showModal && <UpdateModal onClose={() => setShowModal(false)} onDataUpdated={date => { setDataDate(date); localStorage.setItem('ico_data_date', date) }} />}
+      {showModal && <UpdateModal onClose={() => setShowModal(false)} onDataUpdated={(date, liveMat, liveDealer) => { setDataDate(date); localStorage.setItem('ico_data_date', date); if (liveMat) setLiveMatMap(liveMat); if (liveDealer) setLiveDealerMap(liveDealer) }} />}
 
       <header>
         <img src={`data:image/png;base64,${KBB_LOGO_B64}`} alt="KBB 100 Years" style={{height:48,width:'auto'}} />
@@ -863,7 +969,8 @@ export default function App() {
         {sellerName && (
           <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:12}}>
             <span style={{fontFamily:'var(--mono)',fontSize:11,color:'rgba(255,255,255,.4)'}}>{sellerName}</span>
-            <button className="mkt-intel-btn" onClick={() => setShowMarkets(m => !m)}>📊 Market Intel</button>
+            {dataLoading && <span style={{fontSize:11,color:'rgba(255,255,255,.6)',fontFamily:'var(--mono)',marginRight:4}}>⟳ Updating data…</span>}
+        <button className="mkt-intel-btn" onClick={() => setShowMarkets(m => !m)}>📊 Market Intel</button>
             <button className="import-trigger-btn" onClick={() => setShowModal(true)}>↑ Update Data</button>
           </div>
         )}
@@ -1016,9 +1123,10 @@ export default function App() {
                 reservations={reservations}
                 onReserved={onReserved}
                 sellerName={sellerName}
+                liveDealerMap={liveDealerMap}
               />
               <TenureInsightForZip dma={info.dma} searchZip={info.zip} />
-              <DealerTable dma={info.dma} searchZip={info.zip} />
+              <DealerTable dma={info.dma} searchZip={info.zip} liveDealerMap={liveDealerMap} />
               <ZipNotes zip={info.zip} sellerName={sellerName} />
               <ComparablesCard
                 zip={info.zip}
@@ -1442,7 +1550,7 @@ function ComparablesCard({ zip, av, desired, dmaRank, totalDmas }) {
 
 
 // ── Dealer Group Card ─────────────────────────────────────────────────────
-function DealerGroupCard({ searchZip, dma, reservations, onReserved, sellerName }) {
+function DealerGroupCard({ searchZip, dma, reservations, onReserved, sellerName, liveDealerMap }) {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedGroup, setSelectedGroup] = useState(null)
   const [selectedStores, setSelectedStores] = useState({})
