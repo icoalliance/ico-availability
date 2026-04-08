@@ -2213,6 +2213,10 @@ function StickyOpsBar({ reservationId, action: suggestedAction, reservations, on
   const [done, setDone] = useState(false)
 
   const reservation = reservations.find(r => r.id === reservationId)
+  if (!reservation) return null
+
+  const vColors = { APPROVED:'#00c896', APPROVABLE:'#f5a800', REVIEW_REQUIRED:'#f97316', DENIED:'#ff4757' }
+  const vColor = vColors[reservation.verdict] || '#f5a800'
 
   async function verifyPin() {
     if (!pin || pin.length < 4) return
@@ -2235,17 +2239,12 @@ function StickyOpsBar({ reservationId, action: suggestedAction, reservations, on
       const data = await res.json()
       if (data.ok) {
         setDone(true)
-        const dealer = reservation?.dealerName || 'dealer'
+        const dealer = reservation.dealerName || 'dealer'
         setTimeout(() => onDone(`${action === 'approve' ? '✓' : '✗'} ${dealer} ${action === 'approve' ? 'approved' : 'declined'} — RSM has been notified`), 1500)
       }
     } catch(e) { console.error(e) }
     setProcessing(false)
   }
-
-  if (!reservation) return null
-
-  const vColors = { APPROVED:'#00c896', APPROVABLE:'#f5a800', REVIEW_REQUIRED:'#f97316', DENIED:'#ff4757' }
-  const vColor = vColors[reservation.verdict] || '#f5a800'
 
   return (
     <div className="sticky-ops-bar">
@@ -2257,55 +2256,46 @@ function StickyOpsBar({ reservationId, action: suggestedAction, reservations, on
           <span className="sticky-ops-dealer">{reservation.dealerName}</span>
           <span className="sticky-ops-meta">{reservation.zip} · {fmtN(reservation.leadsReserved)} leads · Score {reservation.approvalScore}/10</span>
         </div>
-
-        {done ? (
-          <div style={{color:'#00c896',fontFamily:'var(--cond)',fontWeight:700,fontSize:13}}>
-            ✓ Action recorded — RSM notified
-          </div>
-        ) : !pinVerified ? (
-          <div className="sticky-ops-pin">
-            <input
-              className="sticky-pin-input"
-              type="password"
-              placeholder="Enter PIN"
-              maxLength={6}
-              value={pin}
-              onChange={e => setPin(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && verifyPin()}
-            />
-            <button className="sticky-pin-btn" onClick={verifyPin} disabled={pin.length < 4}>Verify</button>
-            {pinError && <span style={{color:'var(--red)',fontSize:11}}>{pinError}</span>}
-          </div>
-        ) : declineMode ? (
-          <div className="sticky-ops-pin">
-            <input
-              className="sticky-pin-input"
-              style={{width:200}}
-              placeholder="Reason for decline (optional)"
-              value={declineNotes}
-              onChange={e => setDeclineNotes(e.target.value)}
-              autoFocus
-            />
-            <button className="ops-decline-btn" onClick={() => handleAction('decline', declineNotes)} disabled={processing}>
-              {processing ? 'Declining…' : 'Confirm Decline'}
-            </button>
-            <button className="ops-cancel-btn" onClick={() => setDeclineMode(false)}>Cancel</button>
-          </div>
-        ) : (
-          <div className="sticky-ops-actions">
-            <span style={{fontSize:12,color:'rgba(255,255,255,.5)'}}>Logged in as {opsUser?.name}</span>
-            <button className="ops-approve-btn" onClick={() => handleAction('approve', '')} disabled={processing}>
-              {processing ? 'Approving…' : '✓ Approve'}
-            </button>
-            <button className="ops-decline-btn" onClick={() => setDeclineMode(true)} disabled={processing}>
-              ✗ Decline
-            </button>
-          </div>
-        )}
+        <div className="sticky-ops-right">
+          {done ? (
+            <div style={{color:'#00c896',fontFamily:'var(--cond)',fontWeight:700,fontSize:13}}>
+              ✓ Action recorded — RSM notified
+            </div>
+          ) : !pinVerified ? (
+            <div className="sticky-ops-pin">
+              <input className="sticky-pin-input" type="password" placeholder="PIN"
+                maxLength={6} value={pin}
+                onChange={e => setPin(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && verifyPin()} />
+              <button className="sticky-pin-btn" onClick={verifyPin} disabled={pin.length < 4}>Verify</button>
+              {pinError && <span style={{color:'#ff6b7a',fontSize:11}}>{pinError}</span>}
+            </div>
+          ) : declineMode ? (
+            <div className="sticky-ops-pin">
+              <input className="sticky-pin-input" style={{width:180}} placeholder="Decline reason (optional)"
+                value={declineNotes} onChange={e => setDeclineNotes(e.target.value)} autoFocus />
+              <button className="ops-decline-btn" onClick={() => handleAction('decline', declineNotes)} disabled={processing}>
+                {processing ? 'Declining…' : 'Confirm'}
+              </button>
+              <button className="ops-cancel-btn" onClick={() => setDeclineMode(false)}>Cancel</button>
+            </div>
+          ) : (
+            <div className="sticky-ops-actions">
+              <span style={{fontSize:11,color:'rgba(255,255,255,.5)',marginRight:4}}>as {opsUser?.name}</span>
+              <button className="ops-approve-btn" onClick={() => handleAction('approve', '')} disabled={processing}>
+                {processing ? '…' : '✓ Approve'}
+              </button>
+              <button className="ops-decline-btn" onClick={() => setDeclineMode(true)} disabled={processing}>
+                ✗ Decline
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
 }
+
 
 // ── Bug 5: Data freshness footer ──────────────────────────────────────────
 function DataFreshnessFooter({ dataDate: dateDateStr }) {

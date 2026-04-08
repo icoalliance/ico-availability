@@ -618,3 +618,5 @@ header h1 { font-family:var(--cond); font-weight:700; font-size:20px; color:#fff
 .sticky-pin-input:focus { border-color:var(--gold); }
 .sticky-pin-btn { background:var(--gold); color:var(--navy); border:none; border-radius:5px; padding:6px 14px; font-family:var(--cond); font-weight:700; font-size:12px; cursor:pointer; }
 .sticky-ops-actions { display:flex; align-items:center; gap:10px; }
+
+.sticky-ops-right { display:flex; align-items:center; gap:8px; flex-shrink:0; }
