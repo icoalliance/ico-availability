@@ -1321,7 +1321,7 @@ function calcApprovalScore(av, desired, dmaRank, totalDmas) {
 function ApprovalScoreCard({ av, desired, dmaRank, totalDmas }) {
   const result = calcApprovalScore(av, desired, dmaRank, totalDmas)
   if (!result) return null
-  const { score, label, color, rationale, f1, f2, f3, f4, f5 } = result
+  const { score, label, color, rationale, f1, f2, f3, f4, f5, f6, nearbyBCDeliveryNote } = result
   const [showBreakdown, setShowBreakdown] = useState(false)
 
   const factors = [
