@@ -549,13 +549,13 @@ function ReservationsPanel({ reservations, onCancel, onRefresh }) {
             <tr>
               <th>Zip</th><th>Location</th><th className="th-r">Leads</th>
               <th>Dealer</th><th>Notes</th><th>Reserved By</th>
-              <th>Reserved</th><th>Expires</th><th></th>
+              <th>Ops Status</th><th>Reserved</th><th>Expires</th><th></th>
             </tr>
           </thead>
           <tbody>
             {active.map(r => <ReservationRow key={r.id} r={r} onCancel={onCancel} />)}
             {expired.length > 0 && (
-              <tr className="av-section"><td colSpan={9}>Expired ({expired.length})</td></tr>
+              <tr className="av-section"><td colSpan={10}>Expired ({expired.length})</td></tr>
             )}
             {expired.map(r => <ReservationRow key={r.id} r={r} onCancel={null} />)}
           </tbody>
@@ -576,6 +576,17 @@ function ReservationRow({ r, onCancel }) {
       <td>{r.dealerName || '—'}</td>
       <td className="td-dim">{r.notes || '—'}</td>
       <td className="td-dim">{r.reservedBy || '—'}</td>
+      <td>
+        {r.opsStatus && r.opsStatus !== 'DENIED' ? (
+          <span style={{
+            fontFamily:'var(--cond)', fontWeight:700, fontSize:10, letterSpacing:.5,
+            padding:'2px 7px', borderRadius:4,
+            background: r.opsStatus === 'APPROVED' ? '#f0fdf4' : r.opsStatus === 'PENDING' ? '#fffbeb' : '#fff0f0',
+            color: r.opsStatus === 'APPROVED' ? '#15803d' : r.opsStatus === 'PENDING' ? '#92400e' : '#b91c1c',
+            border: `1px solid ${r.opsStatus === 'APPROVED' ? '#86efac' : r.opsStatus === 'PENDING' ? '#fde68a' : '#fca5a5'}`
+          }}>{r.opsStatus}</span>
+        ) : <span className="td-dim">—</span>}
+      </td>
       <td className="td-mono td-dim">{r.createdAt ? fmtDate(r.createdAt) : "—"}</td>
       <td className={urgency}>
         {r.status === 'active'
@@ -1067,6 +1078,7 @@ export default function App() {
 
       {showModal && <UpdateModal onClose={() => setShowModal(false)} onDataUpdated={(date, liveMat, liveDealer) => { setDataDate(date); localStorage.setItem('ico_data_date', date); if (liveMat) setLiveMatMap(liveMat); if (liveDealer) setLiveDealerMap(liveDealer) }} />}
 
+      {opsBarId && <div style={{height:56}} />}
       <header>
         <img src={`data:image/png;base64,${KBB_LOGO_B64}`} alt="KBB 100 Years" style={{height:48,width:'auto'}} />
         <h1>ICO Intelligence</h1>
