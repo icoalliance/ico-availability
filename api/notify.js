@@ -8,7 +8,6 @@ const kv = new Redis({
 const RESEND_KEY = process.env.RESEND_API_KEY
 const OPS_EMAIL = 'blvwfox@gmail.com'
 const APP_URL = 'https://ico-availability.vercel.app'
-const KBB_LOGO_B64 = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAsICAoIBwsKCQoNDAsNERwSEQ8PESIZGhQcKSQrKigkJyctMkA3LTA9MCcnOEw5PUNFSElIKzZPVU5GVEBHSEX/2wBDAQwNDREPESESEiFFLicuRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUX/wAARCAAoAD0DASIAAhEBAxEB/8QAHAAAAgMAAwEAAAAAAAAAAAAAAAYEBQcBAgMI/8QAMhAAAQMCBAQEBQMFAAAAAAAAAQIDBAURAAYSIRMxQVEHFGFxFSIygZEWJCYzNFJi8f/EABYBAQEBAAAAAAAAAAAAAAAAAAABAv/EABwRAQEAAgMBAQAAAAAAAAAAAAABAhEhMfADEv/aAAwDAQACEQMRAD8AUMn5Tg1WK7V65UmoVKiuaHATZbirA6R+RyufTFpnjKcc5vpdKy9BTHMyOlQbBPMqVdSr3tYC59sZ7c2t0x9CvJCfEAyUpC3o9A1tJPfiH/n3wCdJotJy0EQqPwJdTjq/eTJbIcQDa+lINwCOZABIHM480Sos2R/ImIUuAlCuL5WIG3kdNQsAqwIN7djiNDKfKx3FVJtpbraVOFbepSCoaisHuoqVfHZt1tMQn4y2tRAXZTRUQoche/Ppf198ax+dyw/UvaXKS6WNTj5U8PoceRHpaq2/Mutl+QoKaSnmN7W5EdLnvisb8QqDVliNX8rQxGXtxYwAW36jYH8HEmrMNu+Fc8LSAINUKI3+oJF0j21qH2wouUSlmLIdYqRcW3EbfShWlJK1HdHPfSOdsYxu5K1Zq6Ss65QboCo1Qpb/AJqjThqjvXuUnnpJ9uX37YU8PctpLVAm0b9RsPQYrKZDDKeGriOknWkG99lJPLoq/XdVrlPj02pKjxZAkMhCVBzUkncXsbXAPpfFRXY2TOGYzlfxFo09QKmDT0tvpTzKCtV7eo2P2xjuhQBOk2FumJlSqlRrDqH6jJekrQjQlbhvZN+Xtc4DSa5TolLbbnQpbb9Hmq/aqbGrSDdRbUna4BvpNwoXt0xFp8N2fURTIAS3LdGoJebUhCQN7q1EqIHMJ5E2vfCDT6zNpYtEd0ELDiSQFaVC+4B2vv2xOn5qrlTF50lbyltltK+GEqCTubFIHbfGeZNTr3u143toecMsVB/KcGn5ZKanAYcUuQtpwKcW7vckX33KjYb/AIwjUvw8zLU5SWU0t+MkmynZKS2lI777n7XxUUuuVOiulymTX4qlfUG12Cvccjiym53zNU4ympNWlKZOygiyAfQ6QMaRdZ3do1EpETLNISxJksK1zJoQnUpf+IV7nlfawHfCHgxyQUmxBB9cBon6sy/MYpcea25wobbaXUcLUiQrgBAUsdShQFuYIJ2x5O5my87FXG4bjcbQtry7bR0lHmkvAA32CkhQ9DgwYDiqVPK71Pqz8KDDDiUoREs3oUpawpKzo7JTY35ah3OJ8bO9GbolIiOPSNbDTbblmiQ0Q04hR3VY7rH0gE23vtgwYCDDq+TGVRVPQ0uKKPn1RflbUGm07i/zAqS4fdd/XHXL2a6RTKDV4jnFZ8w+8tphtClAoU2UpF722JH1A8u+DBgPX45krj3+HJ0cC39p0v8A07avrttxMVeZqvSKv5N2AoMPIaSiQp2PqLighCQq++21rdLX64MGA//Z'
 
 async function sendEmail(to, subject, html) {
   if (!RESEND_KEY) {
@@ -57,24 +56,28 @@ function opsEmailHtml(r, av) {
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,sans-serif;">
+<body style="margin:0;padding:0;background:#f4f5f8;font-family:Arial,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:24px 0;">
 <tr><td align="center">
 <table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;width:100%;">
 
   <!-- Header -->
-  <tr><td style="background:#0f172a;border-radius:10px 10px 0 0;padding:20px 28px;">
+  <tr><td style="background:#00205b;border-radius:10px 10px 0 0;padding:20px 28px;">
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr>
         <td valign="middle">
           <table cellpadding="0" cellspacing="0">
             <tr>
-              <td valign="middle" style="padding-right:14px;border-right:1px solid rgba(255,255,255,.15);">
-                <img src="${KBB_LOGO_B64}" alt="KBB" width="61" height="40" style="display:block;border:0;outline:none;" />
+              <td valign="middle" style="padding-right:16px;border-right:1px solid rgba(255,255,255,.2);">
+                <div style="background:#f5a800;border-radius:6px;padding:6px 10px;text-align:center;">
+                  <div style="color:#00205b;font-size:9px;font-weight:700;letter-spacing:1px;font-family:Arial,sans-serif;line-height:1.2;">KELLEY</div>
+                  <div style="color:#00205b;font-size:11px;font-weight:900;font-family:Arial,sans-serif;line-height:1.1;">BLUE BOOK</div>
+                  <div style="color:#00205b;font-size:7px;font-weight:700;letter-spacing:1px;font-family:Arial,sans-serif;">ICO</div>
+                </div>
               </td>
-              <td valign="middle" style="padding-left:14px;">
-                <div style="color:#fff;font-size:20px;font-weight:700;letter-spacing:.5px;font-family:Arial,sans-serif;line-height:1.2;">ICO Intelligence</div>
-                <div style="color:rgba(255,255,255,.4);font-size:10px;font-family:Arial,sans-serif;margin-top:2px;letter-spacing:.5px;">KELLEY BLUE BOOK ICO</div>
+              <td valign="middle" style="padding-left:16px;">
+                <div style="color:#ffffff;font-size:20px;font-weight:700;letter-spacing:.5px;font-family:Arial,sans-serif;line-height:1.2;">ICO Intelligence</div>
+                <div style="color:rgba(255,255,255,.5);font-size:10px;font-family:Arial,sans-serif;margin-top:2px;letter-spacing:1px;text-transform:uppercase;">Kelley Blue Book</div>
               </td>
             </tr>
           </table>
@@ -88,7 +91,7 @@ function opsEmailHtml(r, av) {
 
   <!-- Title bar -->
   <tr><td style="background:${color}18;border-left:4px solid ${color};border-right:1px solid #e2e8f0;padding:14px 28px;">
-    <div style="font-size:16px;font-weight:700;color:#0f172a;">${isAuto ? '✓ Auto-Approved Reservation' : '🔔 New BC Reservation — Action Required'}</div>
+    <div style="font-size:16px;font-weight:700;color:#00205b;">${isAuto ? '✓ Auto-Approved Reservation' : '🔔 New BC Reservation — Action Required'}</div>
     <div style="font-size:12px;color:#64748b;margin-top:3px;">Submitted ${submittedTime} ET by ${r.reservedBy}</div>
   </td></tr>
 
@@ -99,7 +102,7 @@ function opsEmailHtml(r, av) {
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
       <tr style="background:#f8fafc;">
         <td style="padding:10px 14px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;width:160px;">Dealer</td>
-        <td style="padding:10px 14px;font-size:14px;font-weight:700;color:#0f172a;">${r.dealerName}</td>
+        <td style="padding:10px 14px;font-size:14px;font-weight:700;color:#00205b;">${r.dealerName}</td>
       </tr>
       <tr>
         <td style="padding:10px 14px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Zip / Market</td>
@@ -161,7 +164,7 @@ function opsEmailHtml(r, av) {
           <td align="right" style="font-size:12px;font-weight:700;color:${f.val >= f.max ? '#00c896' : f.val === 0 ? '#ff4757' : '#f5a800'};">${f.val}/${f.max}</td>
         </tr>`).join('')}
         <tr style="border-top:1px solid #e2e8f0;">
-          <td style="padding:6px 0;font-size:13px;font-weight:700;color:#0f172a;">Total</td>
+          <td style="padding:6px 0;font-size:13px;font-weight:700;color:#00205b;">Total</td>
           <td align="right" style="font-size:15px;font-weight:700;color:${scoreColor};">${r.approvalScore}/10</td>
         </tr>
       </table>` : ''}
@@ -177,7 +180,7 @@ function opsEmailHtml(r, av) {
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr>
         <td align="center">
-          <a href="${viewUrl}" style="display:inline-block;background:#0f172a;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;letter-spacing:.5px;">
+          <a href="${viewUrl}" style="display:inline-block;background:#00205b;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;letter-spacing:.5px;">
             Review &amp; Action in ICO Intelligence →
           </a>
         </td>
@@ -195,7 +198,7 @@ function opsEmailHtml(r, av) {
   </td></tr>
 
   <!-- Footer -->
-  <tr><td style="background:#0f172a;border-radius:0 0 10px 10px;padding:14px 28px;">
+  <tr><td style="background:#00205b;border-radius:0 0 10px 10px;padding:14px 28px;border-top:3px solid #f5a800;">
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr>
         <td style="font-size:11px;color:rgba(255,255,255,.3);">
@@ -218,7 +221,7 @@ function rsmEmailHtml(r, approved) {
   const label = approved ? 'APPROVED' : 'DECLINED'
   return `
 <!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b;">
-<div style="background:#0f172a;padding:20px 24px;border-radius:8px 8px 0 0;">
+<div style="background:#00205b;padding:20px 24px;border-radius:8px 8px 0 0;">
   <div style="color:#fff;font-size:20px;font-weight:700;">ICO Intelligence</div>
 </div>
 <div style="border:1px solid #e2e8f0;border-top:none;padding:24px;border-radius:0 0 8px 8px;">
@@ -235,7 +238,7 @@ function rsmEmailHtml(r, approved) {
     }
   </p>
   ${r.elapsedMinutes ? `<p style="font-size:12px;color:#94a3b8;">Response time: ${r.elapsedMinutes} minute${r.elapsedMinutes !== 1 ? 's' : ''}</p>` : ''}
-  <a href="${APP_URL}?zip=${r.zip}&leads=${r.leadsReserved}" style="display:block;text-align:center;background:#0f172a;color:#fff;padding:12px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;margin-top:16px;">View in ICO Intelligence →</a>
+  <a href="${APP_URL}?zip=${r.zip}&leads=${r.leadsReserved}" style="display:block;text-align:center;background:#00205b;color:#fff;padding:12px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;margin-top:16px;">View in ICO Intelligence →</a>
 </div>
 </body></html>`
 }
