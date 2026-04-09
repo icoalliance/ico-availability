@@ -75,63 +75,69 @@ export default async function handler(req, res) {
     }
 
     if (fileType === 'dealer') {
-      // Parse Dealer Export — build dealerMap grouped by DMA
-      // Find header row
-      let headerRow = 0
-      for (let i = 0; i < Math.min(5, rows.length); i++) {
-        if (rows[i].some(v => v && String(v).toLowerCase().includes('zip'))) {
-          headerRow = i; break
-        }
+      // Parse Dealer Export
+      // Expected columns: SVOC, BC Status, Group, Dealer, Product Name, 
+      //                   Rate, Market Rates, DAT Target, Dealer Zip, Available Leads, Dealer DMA, Code
+      const headers = rows[0].map(h => h ? String(h).toLowerCase().trim() : '')
+      
+      // Find column indexes by name
+      const col = name => headers.findIndex(h => h.includes(name))
+      const zipIdx    = col('dealer zip') >= 0 ? col('dealer zip') : col('zip')
+      const nameIdx   = col('dealer') >= 0 ? col('dealer') : col('name')
+      const groupIdx  = col('group')
+      const dmaIdx    = col('dealer dma') >= 0 ? col('dealer dma') : col('dma')
+      const rateIdx   = col('rate') >= 0 ? col('rate') : -1
+      const mktIdx    = col('market rate') >= 0 ? col('market rate') : col('market rates')
+      const targetIdx = col('dat target') >= 0 ? col('dat target') : col('target')
+      const availIdx  = col('available leads') >= 0 ? col('available leads') : col('avail')
+      const svocIdx   = col('svoc')
+
+      if (zipIdx < 0 || dmaIdx < 0) {
+        return res.status(400).json({ error: 'Could not find Dealer Zip or Dealer DMA columns. Check file format.' })
       }
-      const headers = rows[headerRow].map(h => h ? String(h).toLowerCase().trim() : '')
-      const zipIdx = headers.findIndex(h => h.includes('zip'))
-      const nameIdx = headers.findIndex(h => h.includes('dealer') || h.includes('name'))
-      const groupIdx = headers.findIndex(h => h.includes('group'))
-      const dmaIdx = headers.findIndex(h => h.includes('dma'))
-      const svocIdx = headers.findIndex(h => h.includes('svoc') || h.includes('revenue'))
-      const tenureIdx = headers.findIndex(h => h.includes('tenure'))
-      const rateIdx = headers.findIndex(h => h.includes('rate') && !h.includes('mkt'))
-      const mktRateIdx = headers.findIndex(h => h.includes('mkt'))
-      const targetIdx = headers.findIndex(h => h.includes('target'))
-      const availIdx = headers.findIndex(h => h.includes('avail'))
 
       const dealerMap = {}
-      for (let i = headerRow + 1; i < rows.length; i++) {
+      for (let i = 1; i < rows.length; i++) {
         const row = rows[i]
-        if (!row[zipIdx]) continue
+        if (!row[zipIdx] && row[zipIdx] !== 0) continue
         let z
-        try { z = String(parseInt(row[zipIdx])).padStart(5,'0') } catch { continue }
-        const dma = row[dmaIdx] ? String(row[dmaIdx]).trim().toUpperCase() : 'UNKNOWN'
+        try { z = String(parseInt(String(row[zipIdx]).replace(/[^0-9]/g,''))).padStart(5,'0') } catch { continue }
+        if (z.length !== 5 || z === '00000') continue
+        
+        const dma = dmaIdx >= 0 && row[dmaIdx] 
+          ? String(row[dmaIdx]).trim().toUpperCase() 
+          : 'UNKNOWN'
         if (!dealerMap[dma]) dealerMap[dma] = []
+        
+        const parseNum = (v) => { try { return v !== null && v !== undefined && v !== '' ? parseInt(String(v).replace(/[^0-9-]/g,'')) || null : null } catch { return null } }
+
         dealerMap[dma].push([
           z,
-          row[nameIdx] ? String(row[nameIdx]).trim() : '',
-          row[groupIdx] ? String(row[groupIdx]).trim() : '',
-          row[svocIdx] ? String(row[svocIdx]).trim() : '',
-          row[rateIdx] ? String(row[rateIdx]).trim() : '',
-          row[targetIdx] ? parseInt(String(row[targetIdx]).replace(/,/g,'')) || null : null,
-          row[availIdx] ? parseInt(String(row[availIdx]).replace(/,/g,'')) || null : null,
-          row[svocIdx] ? String(row[svocIdx]).trim() : '',
-          null, null,
-          row[tenureIdx] ? parseInt(row[tenureIdx]) || null : null,
-          null, null
+          nameIdx >= 0 && row[nameIdx] ? String(row[nameIdx]).trim() : '',
+          groupIdx >= 0 && row[groupIdx] ? String(row[groupIdx]).trim() : '',
+          rateIdx >= 0 && row[rateIdx] ? String(row[rateIdx]).trim() : '',
+          mktIdx >= 0 && row[mktIdx] ? String(row[mktIdx]).trim() : '',
+          targetIdx >= 0 ? parseNum(row[targetIdx]) : null,
+          availIdx >= 0 ? parseNum(row[availIdx]) : null,
+          svocIdx >= 0 && row[svocIdx] ? String(row[svocIdx]).trim() : '',
+          null, null, null, null, null
         ])
       }
 
       const json = JSON.stringify(dealerMap)
       await kv.set('ico_dealer_data', json)
-      await kv.set('ico_dealer_meta', { 
+      await kv.set('ico_dealer_meta', {
         dmas: Object.keys(dealerMap).length,
         dealers: Object.values(dealerMap).flat().length,
         date: today, fileName,
         updatedAt: new Date().toISOString()
       })
 
-      return res.status(200).json({ 
+      return res.status(200).json({
         ok: true, type: 'dealer',
         dmas: Object.keys(dealerMap).length,
         dealers: Object.values(dealerMap).flat().length,
-        date: today 
+        date: today
       })
     }
 
