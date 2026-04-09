@@ -606,7 +606,7 @@ header h1 { font-family:var(--cond); font-weight:700; font-size:20px; color:#fff
 .toast-info { background:var(--navy); color:#fff; }
 
 /* ── Sticky Ops Action Bar ── */
-.sticky-ops-bar { position:sticky; top:0; z-index:400; background:var(--navy); border-bottom:2px solid #f5a800; box-shadow:0 4px 20px rgba(0,0,0,.3); }
+.sticky-ops-bar { position:fixed; top:0; left:0; right:0; z-index:1000; background:var(--navy); border-bottom:3px solid #f5a800; box-shadow:0 4px 20px rgba(0,0,0,.4); }
 .sticky-ops-inner { max-width:1100px; margin:0 auto; padding:10px 20px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
 .sticky-ops-info { display:flex; align-items:center; gap:10px; flex:1; flex-wrap:wrap; }
 .sticky-ops-verdict { font-family:var(--cond); font-weight:700; font-size:11px; letter-spacing:.5px; padding:3px 10px; border-radius:4px; white-space:nowrap; }
@@ -620,3 +620,9 @@ header h1 { font-family:var(--cond); font-weight:700; font-size:20px; color:#fff
 .sticky-ops-actions { display:flex; align-items:center; gap:10px; }
 
 .sticky-ops-right { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+
+/* ── Reserve Box — Qualification Form ── */
+.reserve-toggle-group { display:flex; gap:4px; }
+.reserve-toggle { background:var(--bg); border:1px solid var(--border); border-radius:5px; padding:5px 12px; font-family:var(--cond); font-weight:700; font-size:12px; color:var(--muted); cursor:pointer; transition:all .15s; white-space:nowrap; }
+.reserve-toggle:hover { border-color:var(--navy); color:var(--navy); }
+.reserve-toggle.active { background:var(--navy); border-color:var(--navy); color:#fff; }

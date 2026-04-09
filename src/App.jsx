@@ -167,7 +167,7 @@ function ZipRow({ e, baseOverage }) {
 }
 
 // ── Reserve box ────────────────────────────────────────────────────────────
-function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, sellerEmail, verdict, approvalScore, av }) {
+function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, sellerEmail, verdict, approvalScore, av, dealerMapData }) {
   const [checked, setChecked] = useState(false)
   const [leads, setLeads] = useState(desired || '')
   const [dealer, setDealer] = useState('')
@@ -176,6 +176,10 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, seller
   const [confirmed, setConfirmed] = useState(null)
   const [error, setError] = useState('')
   const [confirmingDuplicate, setConfirmingDuplicate] = useState(false)
+  const [bcType, setBcType] = useState('new')          // 'new' | 'upsell'
+  const [dealerType, setDealerType] = useState('franchise') // 'franchise' | 'independent'
+  const [hasCrm, setHasCrm] = useState(null)           // true | false | null
+  const [inventorySize, setInventorySize] = useState('') // '<50'|'50-150'|'150-300'|'300+'
 
   // Reset all state when zip changes
   useEffect(() => {
@@ -186,6 +190,10 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, seller
     setError('')
     setLeads(desired || '')
     setConfirmingDuplicate(false)
+    setBcType('new')
+    setDealerType('franchise')
+    setHasCrm(null)
+    setInventorySize('')
   }, [zipInfo.zip])
 
   // Reset confirmation when the reservation is released externally (from panel or slideout)
@@ -211,7 +219,11 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, seller
     try {
       // Determine effective verdict — large requests always go to review
       const leadsNum = parseInt(leads)
-      const effectiveVerdict = leadsNum >= 600 && verdict !== 'DENIED'
+      // Threshold rules per ICO Ops policy:
+      // New BC: >400 needs escalation
+      // Upsell: >600 needs escalation (increments of 150 allowed up to 600)
+      const threshold = bcType === 'upsell' ? 600 : 400
+      const effectiveVerdict = leadsNum > threshold && verdict !== 'DENIED'
         ? 'REVIEW_REQUIRED' : verdict
 
       // Build score breakdown for email
@@ -244,6 +256,10 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, seller
           )
           return sc?.nearbyBCDeliveryNote || null
         })() : null,
+        bcType,
+        dealerType,
+        hasCrm,
+        inventorySize: dealerType === 'independent' ? inventorySize : null,
       })
 
       // Send to ICO Ops only for real BC verdicts
@@ -330,22 +346,100 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, seller
         Reserve {desired ? fmtN(desired) : ''} leads for this zip
       </label>
 
-      {checked && (
+      {checked && (() => {
+        const leadsNum = parseInt(leads) || 0
+        const threshold = bcType === 'upsell' ? 600 : 400
+        const overThreshold = leadsNum > threshold
+        // Find current target if upsell
+        const currentTarget = bcType === 'upsell' && dealer.trim() ? (() => {
+          const dmaKey = zipInfo.dma?.toUpperCase()
+          const entries = dealerMapData?.[dmaKey] || []
+          const match = entries.find(e => e[0] === zipInfo.zip)
+          return match ? match[5] : null  // index 5 = DAT Target
+        })() : null
+
+        return (
         <div style={{marginTop:12}}>
-          <div className="reserve-fields">
+
+          {/* Row 1: Dealer Name */}
+          <div className="reserve-field">
+            <label className="reserve-field-label">Dealer Name *</label>
+            <input className="reserve-input" value={dealer} onChange={e=>setDealer(e.target.value)} placeholder="e.g. World Car Nissan" />
+          </div>
+
+          {/* Row 2: New BC / Upsell + Franchise / Independent */}
+          <div className="reserve-fields" style={{marginTop:8}}>
             <div className="reserve-field">
-              <label className="reserve-field-label">Dealer Name *</label>
-              <input className="reserve-input" value={dealer} onChange={e=>setDealer(e.target.value)} placeholder="e.g. World Car Nissan" />
+              <label className="reserve-field-label">Type</label>
+              <div className="reserve-toggle-group">
+                <button className={`reserve-toggle ${bcType==='new'?'active':''}`} onClick={()=>setBcType('new')}>New BC</button>
+                <button className={`reserve-toggle ${bcType==='upsell'?'active':''}`} onClick={()=>setBcType('upsell')}>Upsell</button>
+              </div>
             </div>
-            <div className="reserve-field" style={{maxWidth:140}}>
-              <label className="reserve-field-label">Lead Amount *</label>
-              <input className="reserve-input" type="number" value={leads} onChange={e=>setLeads(e.target.value)} min={1} placeholder="200" />
+            <div className="reserve-field">
+              <label className="reserve-field-label">Dealer Type</label>
+              <div className="reserve-toggle-group">
+                <button className={`reserve-toggle ${dealerType==='franchise'?'active':''}`} onClick={()=>setDealerType('franchise')}>Franchise</button>
+                <button className={`reserve-toggle ${dealerType==='independent'?'active':''}`} onClick={()=>setDealerType('independent')}>Independent</button>
+              </div>
             </div>
           </div>
+
+          {/* Row 3: Has CRM + Vehicle Inventory (independent only) */}
+          <div className="reserve-fields" style={{marginTop:8}}>
+            <div className="reserve-field">
+              <label className="reserve-field-label">Has CRM?</label>
+              <div className="reserve-toggle-group">
+                <button className={`reserve-toggle ${hasCrm===true?'active':''}`} onClick={()=>setHasCrm(true)}>Yes</button>
+                <button className={`reserve-toggle ${hasCrm===false?'active':''}`} onClick={()=>setHasCrm(false)}>No</button>
+              </div>
+            </div>
+            {dealerType === 'independent' && (
+              <div className="reserve-field">
+                <label className="reserve-field-label">Vehicle Inventory</label>
+                <select className="reserve-input" value={inventorySize} onChange={e=>setInventorySize(e.target.value)}>
+                  <option value="">Select size</option>
+                  <option value="<50">&lt;50 vehicles</option>
+                  <option value="50-150">50–150 vehicles</option>
+                  <option value="150-300">150–300 vehicles</option>
+                  <option value="300+">300+ vehicles</option>
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Independent < 50 warning */}
+          {dealerType === 'independent' && inventorySize === '<50' && (
+            <div style={{background:'#fff7ed',border:'1px solid #fed7aa',borderRadius:6,padding:'8px 12px',marginTop:6,fontSize:12,color:'#92400e'}}>
+              ⚠ Independent dealers need 50+ vehicles listed. ICO Ops exception requires Performance Management approval.
+            </div>
+          )}
+
+          {/* Upsell context */}
+          {bcType === 'upsell' && currentTarget && (
+            <div style={{background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:6,padding:'8px 12px',marginTop:6,fontSize:12,color:'#1e40af'}}>
+              Current target: <strong>{fmtN(currentTarget)} leads/mo</strong> — requesting {fmtN(leadsNum)} more = <strong>{fmtN(currentTarget + leadsNum)} total</strong>
+              {currentTarget + leadsNum > 600 && <span style={{color:'var(--red)',fontWeight:700}}> · Exceeds 600 — escalation required</span>}
+            </div>
+          )}
+
+          {/* Row 4: Lead Amount */}
+          <div className="reserve-field" style={{marginTop:8,maxWidth:160}}>
+            <label className="reserve-field-label">Lead Amount * <span style={{fontWeight:400,color:'var(--muted)'}}>({bcType==='upsell'?'max 600':'max 400'} without escalation)</span></label>
+            <input className="reserve-input" type="number" value={leads} onChange={e=>setLeads(e.target.value)} min={1} placeholder="200" />
+            {overThreshold && (
+              <div style={{marginTop:4,fontSize:11,color:'#c2410c',fontWeight:600}}>
+                ⚠ Over {threshold} leads — this will be flagged as REVIEW REQUIRED for ICO Ops escalation
+              </div>
+            )}
+          </div>
+
+          {/* Row 5: Notes */}
           <div className="reserve-field" style={{marginTop:8}}>
             <label className="reserve-field-label">Notes (optional)</label>
             <input className="reserve-input" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="e.g. New install, pending approval" />
           </div>
+
           <div className="reserve-expiry-note">
             Reservation expires in 14 days — <strong>{expires.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</strong>
           </div>
@@ -363,13 +457,19 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, seller
           {(existingReservations.length === 0 || confirmingDuplicate) && (
             <>
               {error && <div style={{color:'var(--red)',fontSize:12,marginBottom:8}}>{error}</div>}
-              <button className="reserve-submit-btn" onClick={submit} disabled={loading}>
+              <button className="reserve-submit-btn" onClick={submit} disabled={loading || hasCrm === null || (dealerType === 'independent' && !inventorySize)}>
                 {loading ? 'Saving…' : 'Confirm Reservation'}
               </button>
+              {(hasCrm === null || (dealerType === 'independent' && !inventorySize)) && (
+                <div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>
+                  {hasCrm === null ? 'Please indicate whether dealer has a CRM' : 'Please select vehicle inventory size'}
+                </div>
+              )}
             </>
           )}
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
@@ -1280,6 +1380,7 @@ export default function App() {
                   sellerName={sellerName}
                   sellerEmail={sellerEmail}
                   verdict={verdict}
+                  dealerMapData={liveDealerMap || dealerMap}
                   approvalScore={result?.av ? calcApprovalScore(result.av, des,
                     Object.entries(dmaSaturation).sort((a,b)=>b[1].avail-a[1].avail).findIndex(([d])=>d===info.dma)+1,
                     Object.keys(dmaSaturation).length
