@@ -214,12 +214,36 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, seller
       const effectiveVerdict = leadsNum >= 600 && verdict !== 'DENIED'
         ? 'REVIEW_REQUIRED' : verdict
 
+      // Build score breakdown for email
+      const scoreBreakdown = av ? (() => {
+        const sc = calcApprovalScore(av, leadsNum,
+          Object.entries(dmaSaturation).sort((a,b)=>b[1].avail-a[1].avail).findIndex(([d])=>d===zipInfo.dma)+1,
+          Object.keys(dmaSaturation).length
+        )
+        return sc ? [
+          {name:'Base Availability', val:sc.f1, max:3},
+          {name:'Ring Coverage', val:sc.f2, max:3},
+          {name:'Overage Ratio', val:sc.f3, max:2},
+          {name:'DMA Health', val:sc.f4, max:1},
+          {name:'Delivery Trend', val:sc.f5, max:1},
+          {name:'Nearby BC Performance', val:sc.f6 || 0.5, max:1},
+        ] : null
+      })() : null
+
       const res = await createReservation({
         zip: zipInfo.zip, city: zipInfo.city, state: zipInfo.state, dma: zipInfo.dma,
         leadsReserved: leadsNum, dealerName: dealer.trim(),
         notes: notes.trim(), reservedBy: sellerName || 'Unknown',
         reservedByEmail: sellerEmail || '',
         verdict: effectiveVerdict, approvalScore: approvalScore || null,
+        scoreBreakdown,
+        nearbyBCNote: av ? (() => {
+          const sc = calcApprovalScore(av, leadsNum,
+            Object.entries(dmaSaturation).sort((a,b)=>b[1].avail-a[1].avail).findIndex(([d])=>d===zipInfo.dma)+1,
+            Object.keys(dmaSaturation).length
+          )
+          return sc?.nearbyBCDeliveryNote || null
+        })() : null,
       })
 
       // Send to ICO Ops only for real BC verdicts
@@ -2264,7 +2288,7 @@ function StickyOpsBar({ reservationId, action: suggestedAction, reservations, on
             </div>
           ) : !pinVerified ? (
             <div className="sticky-ops-pin">
-              <input className="sticky-pin-input" type="password" placeholder="PIN"
+              <input className="sticky-pin-input" type="password" placeholder="Enter PIN to action" autoFocus
                 maxLength={6} value={pin}
                 onChange={e => setPin(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && verifyPin()} />

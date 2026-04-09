@@ -103,6 +103,29 @@ function opsEmailHtml(r, av) {
       ${r.verdict === 'APPROVABLE' ? `Base zip is over-allocated by ${av && av.base < 0 ? Math.abs(av.base).toLocaleString() : '?'} leads, but a neighboring zip within 15–30 miles has sufficient availability to cover the request. The ICO Ops puzzle approach supports approval — please verify the ring booster zip and confirm overlap is sufficient.` : ''}
       ${r.verdict === 'REVIEW_REQUIRED' ? `${r.leadsReserved >= 600 ? 'Request is for 600+ leads — all large opportunities require manual ICO Ops review to ensure dealer readiness and process alignment. ' : ''}${av && av.base < 0 ? `Base zip is over-allocated by ${Math.abs(av.base).toLocaleString()} leads. ` : ''}${av && av.best15 === 0 && av.best30 === 0 ? 'Inner rings show no availability — only the 30–45mi outer ring has capacity. Radius overlap requires manual assessment.' : 'Overage ratio or market constraints require manual review.'}` : ''}
     </div>
+    ${r.scoreBreakdown ? `
+    <table style="width:100%;border-collapse:collapse;margin-top:12px;">
+      <thead><tr>
+        <td style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:4px 0;border-bottom:1px solid #e2e8f0;">Factor</td>
+        <td style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:4px 0;border-bottom:1px solid #e2e8f0;text-align:right;">Score</td>
+        <td style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:4px 0;border-bottom:1px solid #e2e8f0;text-align:right;">Max</td>
+      </tr></thead>
+      <tbody>
+        ${r.scoreBreakdown.map(f => `
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:6px 0;font-size:13px;color:#1e293b;">${f.name}</td>
+          <td style="padding:6px 0;font-size:13px;font-weight:700;text-align:right;color:${f.val >= f.max ? '#00c896' : f.val === 0 ? '#ff4757' : '#f5a800'};">${f.val}</td>
+          <td style="padding:6px 0;font-size:13px;color:#94a3b8;text-align:right;">${f.max}</td>
+        </tr>`).join('')}
+        <tr style="border-top:2px solid #e2e8f0;">
+          <td style="padding:8px 0;font-size:13px;font-weight:700;color:#1e293b;">Total Score</td>
+          <td style="padding:8px 0;font-size:16px;font-weight:700;text-align:right;color:${r.approvalScore >= 8 ? '#00c896' : r.approvalScore >= 6 ? '#f5a800' : '#ff4757'};">${r.approvalScore}</td>
+          <td style="padding:8px 0;font-size:13px;color:#94a3b8;text-align:right;">10</td>
+        </tr>
+      </tbody>
+    </table>
+    ${r.nearbyBCNote ? `<div style="margin-top:8px;font-size:12px;color:#92400e;background:#fffbeb;padding:8px 10px;border-radius:5px;">${r.nearbyBCNote}</div>` : ''}
+    ` : ''}
   </div>
 
   ${!isAuto ? `
