@@ -75,26 +75,26 @@ export default async function handler(req, res) {
     }
 
     if (fileType === 'dealer') {
-      // Parse Dealer Export
-      // Expected columns: SVOC, BC Status, Group, Dealer, Product Name, 
-      //                   Rate, Market Rates, DAT Target, Dealer Zip, Available Leads, Dealer DMA, Code
-      const headers = rows[0].map(h => h ? String(h).toLowerCase().trim() : '')
+      // Parse Dealer Export using known fixed column positions
+      // Columns: SVOC(0), BC Status(1), Group(2), Dealer(3), Product Name(4),
+      //          Rate(5), Market Rates(6), DAT Target(7), Dealer Zip(8), 
+      //          Available Leads(9), Dealer DMA(10), Code(11)
+      const headers = rows[0] ? rows[0].map(h => h ? String(h).toLowerCase().trim() : '') : []
       
-      // Find column indexes by name
-      const col = name => headers.findIndex(h => h.includes(name))
-      const zipIdx    = col('dealer zip') >= 0 ? col('dealer zip') : col('zip')
-      const nameIdx   = col('dealer') >= 0 ? col('dealer') : col('name')
-      const groupIdx  = col('group')
-      const dmaIdx    = col('dealer dma') >= 0 ? col('dealer dma') : col('dma')
-      const rateIdx   = col('rate') >= 0 ? col('rate') : -1
-      const mktIdx    = col('market rate') >= 0 ? col('market rate') : col('market rates')
-      const targetIdx = col('dat target') >= 0 ? col('dat target') : col('target')
-      const availIdx  = col('available leads') >= 0 ? col('available leads') : col('avail')
-      const svocIdx   = col('svoc')
-
-      if (zipIdx < 0 || dmaIdx < 0) {
-        return res.status(400).json({ error: 'Could not find Dealer Zip or Dealer DMA columns. Check file format.' })
+      // Use exact column name matching with fallback to position
+      const findCol = (exact, fallbackIdx) => {
+        const idx = headers.findIndex(h => h === exact)
+        return idx >= 0 ? idx : fallbackIdx
       }
+      const zipIdx    = findCol('dealer zip', 8)
+      const nameIdx   = findCol('dealer', 3)
+      const groupIdx  = findCol('group', 2)
+      const dmaIdx    = findCol('dealer dma', 10)
+      const rateIdx   = findCol('rate', 5)
+      const mktIdx    = findCol('market rates', 6)
+      const targetIdx = findCol('dat target', 7)
+      const availIdx  = findCol('available leads', 9)
+      const svocIdx   = findCol('svoc', 0)
 
       const dealerMap = {}
       for (let i = 1; i < rows.length; i++) {
