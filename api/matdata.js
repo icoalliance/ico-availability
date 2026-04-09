@@ -32,8 +32,8 @@ export default async function handler(req, res) {
     if (type === 'dealer') {
       const meta = await kv.get('ico_dealer_meta')
       if (!meta) return res.status(404).json({ error: 'No dealer data in Redis' })
-      const json = await kv.get('ico_dealer_data')
-      const dealerMap = JSON.parse(json)
+      const dealerMap = await kv.get('ico_dealer_data')
+      // dealerMap is stored as object directly, no JSON.parse needed
       return res.status(200).json({ dealerMap, meta })
     }
 

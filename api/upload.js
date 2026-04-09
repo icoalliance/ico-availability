@@ -129,8 +129,8 @@ export default async function handler(req, res) {
         ])
       }
 
-      const json = JSON.stringify(dealerMap)
-      await kv.set('ico_dealer_data', json)
+      // Store as object directly (not pre-stringified) to avoid double-encoding
+      await kv.set('ico_dealer_data', dealerMap)
       await kv.set('ico_dealer_meta', {
         dmas: Object.keys(dealerMap).length,
         dealers: Object.values(dealerMap).flat().length,
@@ -174,8 +174,8 @@ export default async function handler(req, res) {
         if (monthData.length) perfMap[z] = monthData
       }
 
-      const json = JSON.stringify(perfMap)
-      await kv.set('ico_perf_data', json)
+      // Store as object directly (not pre-stringified)
+      await kv.set('ico_perf_data', perfMap)
       await kv.set('ico_perf_meta', { 
         zips: Object.keys(perfMap).length,
         date: today, fileName,

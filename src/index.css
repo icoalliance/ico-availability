@@ -626,3 +626,8 @@ header h1 { font-family:var(--cond); font-weight:700; font-size:20px; color:#fff
 .reserve-toggle { background:var(--bg); border:1px solid var(--border); border-radius:5px; padding:5px 12px; font-family:var(--cond); font-weight:700; font-size:12px; color:var(--muted); cursor:pointer; transition:all .15s; white-space:nowrap; }
 .reserve-toggle:hover { border-color:var(--navy); color:var(--navy); }
 .reserve-toggle.active { background:var(--navy); border-color:var(--navy); color:#fff; }
+
+/* ── Reserve Qualification Row ── */
+.reserve-qual-row { display:flex; gap:12px; flex-wrap:wrap; }
+.reserve-qual-row .reserve-field { flex:1; min-width:130px; }
+.reserve-toggle-half { flex:1; text-align:center; justify-content:center; }

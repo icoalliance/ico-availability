@@ -6,6 +6,7 @@ const kv = new Redis({
 })
 
 const RESEND_KEY = process.env.RESEND_API_KEY
+const MAPS_KEY = process.env.GOOGLE_MAPS_API_KEY
 const OPS_EMAIL = 'blvwfox@gmail.com'
 const APP_URL = 'https://ico-availability.vercel.app'
 
@@ -31,6 +32,33 @@ async function sendEmail(to, subject, html) {
   return { ok: res.ok, data }
 }
 
+// Geocode dealer name + zip → { lat, lng, formattedAddress }
+async function geocodeDealer(dealerName, zip) {
+  if (!MAPS_KEY) return null
+  try {
+    const query = encodeURIComponent(`${dealerName} ${zip}`)
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${query}&key=${MAPS_KEY}`
+    const res = await fetch(url)
+    const data = await res.json()
+    if (data.status === 'OK' && data.results[0]) {
+      const loc = data.results[0].geometry.location
+      return {
+        lat: loc.lat,
+        lng: loc.lng,
+        formattedAddress: data.results[0].formatted_address
+      }
+    }
+  } catch(e) {
+    console.error('Geocode failed:', e)
+  }
+  return null
+}
+
+// Build satellite image URL (hosted by Google — renders in Gmail)
+function satelliteImageUrl(lat, lng) {
+  return `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=18&size=580x260&maptype=satellite&markers=color:red%7C${lat},${lng}&key=${MAPS_KEY}`
+}
+
 function verdictColor(verdict) {
   return verdict === 'APPROVED' ? '#00c896'
     : verdict === 'APPROVABLE' ? '#f5a800'
@@ -38,26 +66,137 @@ function verdictColor(verdict) {
     : '#ff4757'
 }
 
-function opsEmailHtml(r, av) {
+// Pre-qualification checklist row helper
+function checkRow(icon, label, value, note, bg) {
+  const bgColor = bg || (icon === '✓' ? '#f0fdf4' : icon === '✗' ? '#fff0f0' : '#fffbeb')
+  const iconColor = icon === '✓' ? '#15803d' : icon === '✗' ? '#b91c1c' : '#92400e'
+  return `<tr style="background:${bgColor};">
+    <td style="padding:7px 12px;width:28px;font-size:14px;color:${iconColor};font-weight:700;">${icon}</td>
+    <td style="padding:7px 8px;font-size:12px;color:#1e293b;font-weight:600;">${label}</td>
+    <td style="padding:7px 12px;font-size:12px;color:#475569;text-align:right;">${value}</td>
+    ${note ? `<td style="padding:7px 12px;font-size:11px;color:#64748b;font-style:italic;">${note}</td>` : '<td></td>'}
+  </tr>`
+}
+
+function buildPreQualChecklist(r) {
+  const rows = []
+
+  // 1. BC Type
+  const bcLabel = r.bcType === 'upsell' ? 'Upsell' : 'New BC'
+  const threshold = r.bcType === 'upsell' ? 600 : 400
+  rows.push(checkRow('ℹ', 'BC Type', bcLabel, '', '#f8fafc'))
+
+  // 2. Dealer Type
+  const dtLabel = r.dealerType === 'independent' ? 'Independent' : 'Franchise'
+  rows.push(checkRow('ℹ', 'Dealer Type', dtLabel, '', '#f8fafc'))
+
+  // 3. Market Tier + minimum
+  if (r.marketTier) {
+    const minLeads = r.tierMinLeads || (r.marketTier <= 'B' ? 100 : 50)
+    const meetsMin = r.leadsReserved >= minLeads
+    rows.push(checkRow(
+      meetsMin ? '✓' : '✗',
+      `Market Tier ${r.marketTier}`,
+      `${r.leadsReserved} leads requested`,
+      meetsMin ? `Meets ${minLeads}-lead minimum` : `Below ${minLeads}-lead minimum for Tier ${r.marketTier}`
+    ))
+  }
+
+  // 4. Threshold check (400 new / 600 upsell)
+  const withinThreshold = r.leadsReserved <= threshold
+  rows.push(checkRow(
+    withinThreshold ? '✓' : '✗',
+    'Threshold Check',
+    `${r.leadsReserved} / ${threshold} max`,
+    withinThreshold ? 'No escalation required' : 'Escalation required'
+  ))
+
+  // 5. Approval score
+  if (r.approvalScore != null) {
+    const scoreOk = r.approvalScore >= 6
+    rows.push(checkRow(
+      scoreOk ? '✓' : '✗',
+      'Approval Score',
+      `${r.approvalScore}/10`,
+      scoreOk ? 'In approvable range' : 'Below approvable threshold'
+    ))
+  }
+
+  // 6. Has CRM (RSM-provided)
+  if (r.hasCrm !== null && r.hasCrm !== undefined) {
+    rows.push(checkRow(
+      r.hasCrm ? '✓' : '✗',
+      'Has CRM',
+      r.hasCrm ? 'Yes' : 'No',
+      r.hasCrm ? 'CRM confirmed by RSM' : 'No CRM — lower ROI risk'
+    ))
+  }
+
+  // 7. Vehicle inventory (independent only)
+  if (r.dealerType === 'independent' && r.inventorySize) {
+    const inv = r.inventorySize
+    const meetsInv = inv !== '<50'
+    rows.push(checkRow(
+      meetsInv ? '✓' : '✗',
+      'Vehicle Inventory',
+      inv + ' vehicles',
+      meetsInv ? 'Meets 50+ vehicle requirement' : 'Below 50 vehicles — Perf Mgmt approval required'
+    ))
+  }
+
+  // 8-10. Manual verification items (always shown as warnings)
+  rows.push(checkRow('⚠', 'Manheim Account', 'Verify manually', 'Must have active account', '#fffbeb'))
+  rows.push(checkRow('⚠', 'Physical Location', 'See satellite image below', 'Not home/gas station/strip mall', '#fffbeb'))
+  rows.push(checkRow('⚠', 'Operating Hours', 'Confirm with RSM', 'Must accept consumers during business hours', '#fffbeb'))
+
+  return `
+  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:20px;">
+    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">
+      Pre-Qualification Checklist
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:6px;overflow:hidden;border:1px solid #e2e8f0;">
+      ${rows.join('')}
+    </table>
+  </div>`
+}
+
+async function opsEmailHtml(r, av) {
   const color = verdictColor(r.verdict)
   const isAuto = r.verdict === 'APPROVED'
-  // Single CTA: View in ICO Intelligence (includes id for sticky bar)
   const viewUrl = `${APP_URL}?zip=${r.zip}&leads=${r.leadsReserved}&id=${r.id}&ops_action=review`
-  const submittedTime = new Date(r.submittedAt || Date.now()).toLocaleString('en-US', { 
-    timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' 
+  const submittedTime = new Date(r.submittedAt || Date.now()).toLocaleString('en-US', {
+    timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short'
   })
-  const verdictLabel = r.verdict ? r.verdict.replace(/_/g,' ') : 'SUBMITTED'
-  
-  // Score bar width
+  const verdictLabel = r.verdict ? r.verdict.replace(/_/g, ' ') : 'SUBMITTED'
   const scoreWidth = r.approvalScore ? Math.round((r.approvalScore / 10) * 100) : 0
   const scoreColor = r.approvalScore >= 8 ? '#00c896' : r.approvalScore >= 6 ? '#f5a800' : '#ff4757'
+
+  // Geocode dealer for satellite image
+  let satHtml = ''
+  if (MAPS_KEY) {
+    const geo = await geocodeDealer(r.dealerName, r.zip)
+    if (geo) {
+      const imgUrl = satelliteImageUrl(geo.lat, geo.lng)
+      satHtml = `
+  <div style="margin-bottom:20px;">
+    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">
+      Dealer Location — Satellite View
+    </div>
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">${geo.formattedAddress}</div>
+    <img src="${imgUrl}" width="580" style="display:block;border-radius:6px;border:1px solid #e2e8f0;max-width:100%;" alt="Satellite view of ${r.dealerName}" />
+    <div style="font-size:10px;color:#94a3b8;margin-top:4px;">Verify: physical lot, not home/gas station/strip mall</div>
+  </div>`
+    }
+  }
+
+  const prequal = buildPreQualChecklist(r)
 
   return `
 <!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f4f5f8;font-family:Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:24px 0;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f8;padding:24px 0;">
 <tr><td align="center">
 <table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;width:100%;">
 
@@ -106,17 +245,21 @@ function opsEmailHtml(r, av) {
       </tr>
       <tr>
         <td style="padding:10px 14px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Zip / Market</td>
-        <td style="padding:10px 14px;font-size:13px;color:#1e293b;">${r.zip} — ${r.city}, ${r.state} (${r.dma})</td>
+        <td style="padding:10px 14px;font-size:13px;color:#1e293b;">${r.zip} — ${r.city}, ${r.state} (${r.dma})${r.marketTier ? ` · <strong>Tier ${r.marketTier}</strong>` : ''}</td>
       </tr>
       <tr style="background:#f8fafc;">
         <td style="padding:10px 14px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Leads Requested</td>
         <td style="padding:10px 14px;font-size:15px;font-weight:700;color:${color};">${r.leadsReserved ? r.leadsReserved.toLocaleString() : '—'}/mo</td>
       </tr>
       <tr>
+        <td style="padding:10px 14px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">BC Type</td>
+        <td style="padding:10px 14px;font-size:13px;color:#1e293b;">${r.bcType === 'upsell' ? 'Upsell' : 'New BC'} · ${r.dealerType === 'independent' ? 'Independent' : 'Franchise'} · CRM: ${r.hasCrm === true ? 'Yes' : r.hasCrm === false ? 'No' : 'Not provided'}</td>
+      </tr>
+      <tr style="background:#f8fafc;">
         <td style="padding:10px 14px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">RSM</td>
         <td style="padding:10px 14px;font-size:13px;color:#1e293b;">${r.reservedBy}${r.reservedByEmail ? ' · ' + r.reservedByEmail : ''}</td>
       </tr>
-      ${r.notes ? `<tr style="background:#f8fafc;"><td style="padding:10px 14px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Notes</td><td style="padding:10px 14px;font-size:13px;color:#1e293b;font-style:italic;">${r.notes}</td></tr>` : ''}
+      ${r.notes ? `<tr><td style="padding:10px 14px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Notes</td><td style="padding:10px 14px;font-size:13px;color:#1e293b;font-style:italic;">${r.notes}</td></tr>` : ''}
     </table>
 
     <!-- Approval Score -->
@@ -138,13 +281,14 @@ function opsEmailHtml(r, av) {
     <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:20px;">
       <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Market Availability</div>
       <table width="100%" cellpadding="0" cellspacing="0">
-        <tr>
-          <td style="padding:4px 0;font-size:13px;color:#1e293b;">Base Zip Pool</td>
-          <td align="right" style="font-size:13px;font-weight:700;color:${av && av.base < 0 ? '#ff4757' : '#00c896'};">${av && av.base != null ? av.base.toLocaleString() : '—'} leads</td>
-        </tr>
-        <tr><td style="padding:4px 0;font-size:13px;color:#1e293b;">Best within 15mi</td><td align="right" style="font-size:13px;font-weight:700;color:#1e293b;">${av && av.best15 != null ? av.best15.toLocaleString() : '—'} available</td></tr>
-        <tr><td style="padding:4px 0;font-size:13px;color:#1e293b;">Best within 30mi</td><td align="right" style="font-size:13px;font-weight:700;color:#1e293b;">${av && av.best30 != null ? av.best30.toLocaleString() : '—'} available</td></tr>
-        <tr><td style="padding:4px 0;font-size:13px;color:#1e293b;">Best within 45mi</td><td align="right" style="font-size:13px;font-weight:700;color:#1e293b;">${av && av.best45 != null ? av.best45.toLocaleString() : '—'} available</td></tr>
+        <tr><td style="padding:4px 0;font-size:13px;color:#1e293b;">Base Zip Pool</td>
+          <td align="right" style="font-size:13px;font-weight:700;color:${av && av.base < 0 ? '#ff4757' : '#00c896'};">${av && av.base != null ? av.base.toLocaleString() : '—'} leads</td></tr>
+        <tr><td style="padding:4px 0;font-size:13px;color:#1e293b;">Best within 15mi</td>
+          <td align="right" style="font-size:13px;font-weight:700;color:#1e293b;">${av && av.best15 != null ? av.best15.toLocaleString() : '—'} available</td></tr>
+        <tr><td style="padding:4px 0;font-size:13px;color:#1e293b;">Best within 30mi</td>
+          <td align="right" style="font-size:13px;font-weight:700;color:#1e293b;">${av && av.best30 != null ? av.best30.toLocaleString() : '—'} available</td></tr>
+        <tr><td style="padding:4px 0;font-size:13px;color:#1e293b;">Best within 45mi</td>
+          <td align="right" style="font-size:13px;font-weight:700;color:#1e293b;">${av && av.best45 != null ? av.best45.toLocaleString() : '—'} available</td></tr>
       </table>
     </div>
 
@@ -154,7 +298,7 @@ function opsEmailHtml(r, av) {
       <div style="font-size:13px;color:#1e293b;line-height:1.7;">
         ${r.verdict === 'APPROVED' ? 'Base zip availability covers the full requested lead volume. No ring booster needed. Strong approval candidate.' : ''}
         ${r.verdict === 'APPROVABLE' ? `Base zip is over-allocated by <strong>${av && av.base < 0 ? Math.abs(av.base).toLocaleString() : '?'} leads</strong>, but a neighboring zip within 15–30 miles has <strong>${av && av.best15 ? av.best15.toLocaleString() : av && av.best30 ? av.best30.toLocaleString() : '?'} leads available</strong> — sufficient to cover the request using the ICO Ops puzzle approach. Please verify the ring booster zip and confirm the radius overlap is sufficient.` : ''}
-        ${r.verdict === 'REVIEW_REQUIRED' ? `${r.leadsReserved >= 600 ? '<strong>600+ lead request</strong> — all large opportunities require manual ICO Ops review for dealer readiness. ' : ''}${av && av.base < 0 ? `Base zip is over-allocated by <strong>${Math.abs(av.base).toLocaleString()} leads</strong>. ` : ''}${av && av.best15 === 0 && av.best30 === 0 ? 'Inner rings show no availability — only the 30–45mi outer ring has capacity. Radius overlap requires manual assessment.' : 'Market constraints require manual review.'}` : ''}
+        ${r.verdict === 'REVIEW_REQUIRED' ? `${r.leadsReserved >= 400 ? `<strong>${r.bcType === 'upsell' ? '600+' : '400+'} lead request</strong> — requires manual ICO Ops review. ` : ''}${av && av.base < 0 ? `Base zip is over-allocated by <strong>${Math.abs(av.base).toLocaleString()} leads</strong>. ` : ''}${av && av.best15 === 0 && av.best30 === 0 ? 'Inner rings show no availability — only the 30–45mi outer ring has capacity. Radius overlap requires manual assessment.' : 'Market constraints require manual review.'}` : ''}
       </div>
       ${r.nearbyBCNote ? `<div style="margin-top:10px;font-size:12px;color:#92400e;background:#fffbeb;padding:8px 10px;border-radius:5px;">⚠ ${r.nearbyBCNote}</div>` : ''}
       ${r.scoreBreakdown ? `
@@ -170,6 +314,12 @@ function opsEmailHtml(r, av) {
       </table>` : ''}
     </div>
 
+    <!-- Pre-Qualification Checklist -->
+    ${prequal}
+
+    <!-- Satellite Image -->
+    ${satHtml}
+
     ${!isAuto ? `
     <!-- Timer note -->
     <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#92400e;">
@@ -178,13 +328,11 @@ function opsEmailHtml(r, av) {
 
     <!-- Single CTA -->
     <table width="100%" cellpadding="0" cellspacing="0">
-      <tr>
-        <td align="center">
-          <a href="${viewUrl}" style="display:inline-block;background:#00205b;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;letter-spacing:.5px;">
-            Review &amp; Action in ICO Intelligence →
-          </a>
-        </td>
-      </tr>
+      <tr><td align="center">
+        <a href="${viewUrl}" style="display:inline-block;background:#00205b;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;letter-spacing:.5px;">
+          Review &amp; Action in ICO Intelligence →
+        </a>
+      </td></tr>
       <tr><td align="center" style="padding-top:10px;font-size:11px;color:#94a3b8;">
         Opens ICO Intelligence with this reservation pre-loaded. Enter your Ops PIN to approve or decline.
       </td></tr>
@@ -227,12 +375,10 @@ function rsmEmailHtml(r, approved) {
 <div style="border:1px solid #e2e8f0;border-top:none;padding:24px;border-radius:0 0 8px 8px;">
   <div style="background:${color}20;border:1px solid ${color}40;border-radius:8px;padding:16px;margin-bottom:20px;text-align:center;">
     <div style="font-size:28px;font-weight:700;color:${color};">${label}</div>
-    <div style="font-size:13px;color:#64748b;margin-top:4px;">
-      ${r.dealerName} — ${r.zip} ${r.city}, ${r.state}
-    </div>
+    <div style="font-size:13px;color:#64748b;margin-top:4px;">${r.dealerName} — ${r.zip} ${r.city}, ${r.state}</div>
   </div>
   <p style="font-size:14px;">
-    ${approved 
+    ${approved
       ? `Great news! ICO Ops has approved the reservation for <strong>${r.dealerName}</strong> at <strong>${r.leadsReserved.toLocaleString()} leads/mo</strong>. You can now proceed with generating the agreement in CPQ.`
       : `ICO Ops has declined the reservation for <strong>${r.dealerName}</strong>. ${r.opsNotes ? `<br><br><strong>Reason:</strong> ${r.opsNotes}` : ''}`
     }
@@ -254,14 +400,13 @@ export default async function handler(req, res) {
 
   try {
     if (action === 'submit_to_ops') {
-      // Send email to ICO Ops
       const emailResult = await sendEmail(
         OPS_EMAIL,
-        `[ICO Intelligence] ${(reservation.verdict || "SUBMITTED").replace(/_/g," ")} — ${reservation.dealerName} (${reservation.zip})`,
-        opsEmailHtml(reservation, av)
+        `[ICO Intelligence] ${(reservation.verdict || 'SUBMITTED').replace(/_/g, ' ')} — ${reservation.dealerName} (${reservation.zip})`,
+        await opsEmailHtml(reservation, av)
       )
 
-      // Update reservation as submitted
+      // Mark reservation as submitted
       const all = await kv.get('ico_reservations') || []
       const idx = all.findIndex(r => r.id === reservation.id)
       if (idx >= 0) {
@@ -274,11 +419,8 @@ export default async function handler(req, res) {
     }
 
     if (action === 'notify_rsm') {
-      // Send approval/decline email to RSM
       const { approved } = req.body
-      // Send to OPS_EMAIL in test mode regardless of reservedByEmail
-      // In test mode: always send to verified Gmail since Resend free tier restricts recipients
-      const rsmTo = OPS_EMAIL  // TODO: change to reservation.reservedByEmail after domain verification
+      const rsmTo = OPS_EMAIL  // TODO: swap to reservation.reservedByEmail after domain verification
       const emailResult = await sendEmail(
         rsmTo,
         `[ICO Intelligence] ${approved ? '✓ APPROVED' : '✗ DECLINED'} — ${reservation.dealerName} (${reservation.zip})`,

@@ -258,6 +258,8 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, seller
         })() : null,
         bcType,
         dealerType,
+        marketTier: getDmaTier(zipInfo.dma),
+        tierMinLeads: getTierMinLeads(getDmaTier(zipInfo.dma)),
         hasCrm,
         inventorySize: dealerType === 'independent' ? inventorySize : null,
       })
@@ -367,31 +369,27 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, seller
             <input className="reserve-input" value={dealer} onChange={e=>setDealer(e.target.value)} placeholder="e.g. World Car Nissan" />
           </div>
 
-          {/* Row 2: New BC / Upsell + Franchise / Independent */}
-          <div className="reserve-fields" style={{marginTop:8}}>
+          {/* Row 2: Type / Dealer Type / CRM all uniform */}
+          <div className="reserve-qual-row" style={{marginTop:8}}>
             <div className="reserve-field">
-              <label className="reserve-field-label">Type</label>
+              <label className="reserve-field-label">BC Type</label>
               <div className="reserve-toggle-group">
-                <button className={`reserve-toggle ${bcType==='new'?'active':''}`} onClick={()=>setBcType('new')}>New BC</button>
-                <button className={`reserve-toggle ${bcType==='upsell'?'active':''}`} onClick={()=>setBcType('upsell')}>Upsell</button>
+                <button className={`reserve-toggle reserve-toggle-half ${bcType==='new'?'active':''}`} onClick={()=>setBcType('new')}>New BC</button>
+                <button className={`reserve-toggle reserve-toggle-half ${bcType==='upsell'?'active':''}`} onClick={()=>setBcType('upsell')}>Upsell</button>
               </div>
             </div>
             <div className="reserve-field">
               <label className="reserve-field-label">Dealer Type</label>
               <div className="reserve-toggle-group">
-                <button className={`reserve-toggle ${dealerType==='franchise'?'active':''}`} onClick={()=>setDealerType('franchise')}>Franchise</button>
-                <button className={`reserve-toggle ${dealerType==='independent'?'active':''}`} onClick={()=>setDealerType('independent')}>Independent</button>
+                <button className={`reserve-toggle reserve-toggle-half ${dealerType==='franchise'?'active':''}`} onClick={()=>setDealerType('franchise')}>Franchise</button>
+                <button className={`reserve-toggle reserve-toggle-half ${dealerType==='independent'?'active':''}`} onClick={()=>setDealerType('independent')}>Independent</button>
               </div>
             </div>
-          </div>
-
-          {/* Row 3: Has CRM + Vehicle Inventory (independent only) */}
-          <div className="reserve-fields" style={{marginTop:8}}>
             <div className="reserve-field">
               <label className="reserve-field-label">Has CRM?</label>
               <div className="reserve-toggle-group">
-                <button className={`reserve-toggle ${hasCrm===true?'active':''}`} onClick={()=>setHasCrm(true)}>Yes</button>
-                <button className={`reserve-toggle ${hasCrm===false?'active':''}`} onClick={()=>setHasCrm(false)}>No</button>
+                <button className={`reserve-toggle reserve-toggle-half ${hasCrm===true?'active':''}`} onClick={()=>setHasCrm(true)}>Yes</button>
+                <button className={`reserve-toggle reserve-toggle-half ${hasCrm===false?'active':''}`} onClick={()=>setHasCrm(false)}>No</button>
               </div>
             </div>
             {dealerType === 'independent' && (
@@ -1317,13 +1315,18 @@ export default function App() {
 
           let recText = ''
           const base = av.base
+          const dmaTier = getDmaTier(info.dma)
+          const tierMin = getTierMinLeads(dmaTier)
+          const belowTierMin = des && des < tierMin
+
           if (base === null) recText = 'Availability data missing. Contact ICO Operations.'
           else if (des) {
-            if (base >= des)          recText = `Zip ${info.zip} has <strong>${fmtN(base)} leads available</strong> in its own pool — enough to support your requested ${fmtN(des)} leads/mo. Approvable on base availability alone.`
+            if (base >= des)           recText = `Zip ${info.zip} has <strong>${fmtN(base)} leads available</strong> in its own pool — enough to support your requested ${fmtN(des)} leads/mo. Approvable on base availability alone.`
             else if (av.best15 >= des) recText = `Base availability (${fmtN(base)}) is below your requested ${fmtN(des)}, but a neighboring zip within 15 miles has <strong>${fmtN(av.best15)} available</strong> — enough to justify approval with the 0–15 mi booster.`
             else if (av.best30 >= des) recText = `Base and 0–15 mi availability fall short, but a zip in the 15–30 mi band has <strong>${fmtN(av.best30)} available</strong> — a case can be made to ICO Ops.`
             else if (av.best45 >= des) recText = `Only the 30–45 mi ring shows availability. With a base overage of ${fmtN(Math.abs(base))} and no inner-ring headroom, this requires <strong>manual ICO Ops review</strong> — not a standard approval. Submit with the booster zip and let Ops assess the radius overlap.`
             else                       recText = `Even at 45 miles, max nearby availability is <strong>${fmtN(av.best45)}</strong> — below your requested ${fmtN(des)}. This market cannot support the request at this time.`
+            if (belowTierMin) recText += ` <strong style='color:#c2410c'>\u26a0 Tier ${dmaTier} market requires a minimum of ${tierMin} unique leads — your request of ${fmtN(des)} is below the threshold.</strong>`
           } else {
             if (base > 0)             recText = `Zip ${info.zip} has <strong>${fmtN(base)} leads available</strong>. Enter a desired lead amount to check a specific request.`
             else if (av.best15 > 0)   recText = `Base is ${fmtN(base)}, but a nearby zip within 15 miles has <strong>${fmtN(av.best15)} available</strong>. A new BC may be approvable.`
@@ -1340,7 +1343,23 @@ export default function App() {
                 <div className="loc">
                   <div className="loc-name">{info.city}, {info.state} <span className="loc-zip">{info.zip}</span></div>
                   <div className="loc-sub">15-Mile Radius · {isBC ? 'Active Buying Center' : 'No Active Buying Center'}</div>
-                  <div className="dma-tag">{info.dma}</div>
+                  <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                    <div className="dma-tag">{info.dma}</div>
+                    {(() => {
+                      const tier = getDmaTier(info.dma)
+                      const minLeads = getTierMinLeads(tier)
+                      const tierColors = { A:'#00205b', B:'#1d4ed8', C:'#f5a800', D:'#6b7280' }
+                      return tier ? (
+                        <span style={{
+                          background: tierColors[tier], color: tier === 'C' ? '#00205b' : '#fff',
+                          fontFamily:'var(--cond)', fontWeight:700, fontSize:10,
+                          padding:'2px 7px', borderRadius:4, letterSpacing:.5
+                        }}>
+                          TIER {tier} · MIN {minLeads} LEADS
+                        </span>
+                      ) : null
+                    })()}
+                  </div>
                 </div>
               </div>
 
@@ -1428,6 +1447,25 @@ export default function App() {
 
 
 // ── Approval Likelihood Score ─────────────────────────────────────────────
+
+// ── DMA Market Tier Classification ─────────────────────────────────────────
+function getDmaTier(dma) {
+  if (!dma) return null
+  const sorted = Object.entries(dmaSaturation).sort((a, b) => b[1].target - a[1].target)
+  const total = sorted.length
+  const idx = sorted.findIndex(([d]) => d === dma.toUpperCase())
+  if (idx < 0) return null
+  const pct = idx / total
+  if (pct < 0.25) return 'A'
+  if (pct < 0.50) return 'B'
+  if (pct < 0.75) return 'C'
+  return 'D'
+}
+
+function getTierMinLeads(tier) {
+  return (tier === 'A' || tier === 'B') ? 100 : 50
+}
+
 function calcApprovalScore(av, desired, dmaRank, totalDmas) {
   if (!desired || desired === 0) return null
   const { base, best15, best30, best45, hasUnderdeliveryWarning, ring15 } = av
