@@ -880,6 +880,31 @@ export default function App() {
 
   useEffect(() => { loadReservations() }, [loadReservations])
 
+  // Poll for reservation status changes every 30s (RSM gets notified in-app)
+  const prevOpsStatuses = React.useRef({})
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const data = await fetchReservations()
+        // Check if any reservation changed from PENDING to APPROVED/DECLINED
+        data.forEach(r => {
+          if (!r.opsStatus || r.opsStatus === 'PENDING') return
+          const prev = prevOpsStatuses.current[r.id]
+          if (prev === 'PENDING' && (r.opsStatus === 'APPROVED' || r.opsStatus === 'DECLINED')) {
+            const color = r.opsStatus === 'APPROVED' ? 'success' : 'error'
+            showToast(
+              `${r.opsStatus === 'APPROVED' ? '✓' : '✗'} ${r.dealerName} (${r.zip}) ${r.opsStatus.toLowerCase()} by ICO Ops${r.elapsedMinutes ? ' in ' + r.elapsedMinutes + 'm' : ''}`,
+              color
+            )
+          }
+          prevOpsStatuses.current[r.id] = r.opsStatus
+        })
+        setReservations(data)
+      } catch(e) {}
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [])
+
   // Handle URL params (from email links)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -895,10 +920,9 @@ export default function App() {
       }, 800)
     }
 
-    // Ops approve/decline from email link — open ops panel automatically
-    if (opsAction && opsId) {
-      setTimeout(() => setShowOpsPanel(true), 500)
-    }
+    // ops_action=review: just show sticky bar (no auto-action)
+    // ops_action=approve/decline: show bar and auto-action after PIN
+    // Both cases: bar handles it via opsBarId + opsBarAction state
   }, [])
 
   // Load live data from Redis on startup if available
@@ -2060,8 +2084,9 @@ function OpsPanel({ reservations, onClose, onUpdated, opsActionFromUrl, opsIdFro
       const data = await res.json()
       if (data.ok) {
         setOpsUser(data)
-        // Auto-process if came from email link
-        if (opsActionFromUrl && opsIdFromUrl) {
+        // Auto-process if came from email with approve/decline action
+        // 'review' action just shows the bar without auto-actioning
+        if (opsActionFromUrl && opsIdFromUrl && opsActionFromUrl !== 'review') {
           setTimeout(() => handleAction(opsIdFromUrl, opsActionFromUrl, ''), 300)
         }
       }

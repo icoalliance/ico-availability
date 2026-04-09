@@ -41,122 +41,162 @@ function verdictColor(verdict) {
 function opsEmailHtml(r, av) {
   const color = verdictColor(r.verdict)
   const isAuto = r.verdict === 'APPROVED'
-  const zipUrl = `${APP_URL}?zip=${r.zip}&leads=${r.leadsReserved}`
-  const approveUrl = `${APP_URL}?ops_action=approve&id=${r.id}`
-  const declineUrl = `${APP_URL}?ops_action=decline&id=${r.id}`
+  // Single CTA: View in ICO Intelligence (includes id for sticky bar)
+  const viewUrl = `${APP_URL}?zip=${r.zip}&leads=${r.leadsReserved}&id=${r.id}&ops_action=review`
   const submittedTime = new Date(r.submittedAt || Date.now()).toLocaleString('en-US', { 
     timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' 
   })
+  const verdictLabel = r.verdict ? r.verdict.replace(/_/g,' ') : 'SUBMITTED'
+  
+  // Score bar width
+  const scoreWidth = r.approvalScore ? Math.round((r.approvalScore / 10) * 100) : 0
+  const scoreColor = r.approvalScore >= 8 ? '#00c896' : r.approvalScore >= 6 ? '#f5a800' : '#ff4757'
 
   return `
-<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;color:#1e293b;">
-<div style="background:#0f172a;padding:20px 24px;border-radius:8px 8px 0 0;display:flex;align-items:center;gap:12px;">
-  <div style="color:#fff;font-size:20px;font-weight:700;letter-spacing:1px;">ICO Intelligence</div>
-  <div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:4px;margin-left:auto;">${r.verdict ? r.verdict.replace(/_/g," ") : "SUBMITTED"}</div>
-</div>
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:24px 0;">
+<tr><td align="center">
+<table width="620" cellpadding="0" cellspacing="0" style="max-width:620px;width:100%;">
 
-<div style="border:1px solid #e2e8f0;border-top:none;padding:24px;border-radius:0 0 8px 8px;">
-  <h2 style="margin:0 0 4px;font-size:18px;">
-    ${isAuto ? '✓ Auto-Approved Reservation' : '🔔 New BC Reservation — Action Required'}
-  </h2>
-  <p style="margin:0 0 20px;color:#64748b;font-size:13px;">Submitted ${submittedTime} ET by ${r.reservedBy}</p>
-
-  <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
-    <tr style="background:#f8fafc;">
-      <td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;width:140px;">Dealer</td>
-      <td style="padding:10px 14px;font-size:14px;font-weight:600;">${r.dealerName}</td>
-    </tr>
-    <tr>
-      <td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Zip / Market</td>
-      <td style="padding:10px 14px;font-size:14px;">${r.zip} — ${r.city}, ${r.state} (${r.dma})</td>
-    </tr>
-    <tr style="background:#f8fafc;">
-      <td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Leads Requested</td>
-      <td style="padding:10px 14px;font-size:14px;font-weight:700;color:${color};">${r.leadsReserved.toLocaleString()}/mo</td>
-    </tr>
-    <tr>
-      <td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Approval Score</td>
-      <td style="padding:10px 14px;font-size:14px;font-weight:700;color:${color};">${r.approvalScore != null ? r.approvalScore + "/10" : "Pending"}</td>
-    </tr>
-    ${r.notes ? `<tr style="background:#f8fafc;"><td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">RSM Notes</td><td style="padding:10px 14px;font-size:13px;">${r.notes}</td></tr>` : ''}
-    ${av ? `
-    <tr><td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Base Availability</td>
-    <td style="padding:10px 14px;font-size:14px;font-weight:700;color:${(av.base || 0) >= 0 ? '#00c896' : '#ff4757'}">${av.base != null ? av.base.toLocaleString() : '—'} leads</td></tr>
-    <tr style="background:#f8fafc;"><td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Best Ring (0–15mi)</td>
-    <td style="padding:10px 14px;font-size:14px;">${av.best15 != null ? av.best15.toLocaleString() : '—'} available</td></tr>
-    <tr><td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Best Ring (15–30mi)</td>
-    <td style="padding:10px 14px;font-size:14px;">${av.best30 != null ? av.best30.toLocaleString() : '—'} available</td></tr>
-    <tr style="background:#f8fafc;"><td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Best Ring (30–45mi)</td>
-    <td style="padding:10px 14px;font-size:14px;">${av.best45 != null ? av.best45.toLocaleString() : '—'} available</td></tr>
-    ` : ''}
-    <tr>
-      <td style="padding:10px 14px;font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">RSM</td>
-      <td style="padding:10px 14px;font-size:13px;">${r.reservedBy} — <a href="mailto:${r.reservedByEmail}">${r.reservedByEmail}</a></td>
-    </tr>
-  </table>
-
-  <!-- Verdict context -->
-  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:16px;">
-    <div style="font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Why ${r.verdict ? r.verdict.replace(/_/g,' ') : 'this verdict'}?</div>
-    <div style="font-size:13px;color:#1e293b;line-height:1.6;">
-      ${r.verdict === 'APPROVED' ? 'Base zip availability covers the requested lead volume without needing neighboring zip support. Strong candidate.' : ''}
-      ${r.verdict === 'APPROVABLE' ? `Base zip is over-allocated by ${av && av.base < 0 ? Math.abs(av.base).toLocaleString() : '?'} leads, but a neighboring zip within 15–30 miles has sufficient availability to cover the request. The ICO Ops puzzle approach supports approval — please verify the ring booster zip and confirm overlap is sufficient.` : ''}
-      ${r.verdict === 'REVIEW_REQUIRED' ? `${r.leadsReserved >= 600 ? 'Request is for 600+ leads — all large opportunities require manual ICO Ops review to ensure dealer readiness and process alignment. ' : ''}${av && av.base < 0 ? `Base zip is over-allocated by ${Math.abs(av.base).toLocaleString()} leads. ` : ''}${av && av.best15 === 0 && av.best30 === 0 ? 'Inner rings show no availability — only the 30–45mi outer ring has capacity. Radius overlap requires manual assessment.' : 'Overage ratio or market constraints require manual review.'}` : ''}
-    </div>
-    ${r.scoreBreakdown ? `
-    <table style="width:100%;border-collapse:collapse;margin-top:12px;">
-      <thead><tr>
-        <td style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:4px 0;border-bottom:1px solid #e2e8f0;">Factor</td>
-        <td style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:4px 0;border-bottom:1px solid #e2e8f0;text-align:right;">Score</td>
-        <td style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:4px 0;border-bottom:1px solid #e2e8f0;text-align:right;">Max</td>
-      </tr></thead>
-      <tbody>
-        ${r.scoreBreakdown.map(f => `
-        <tr style="border-bottom:1px solid #f1f5f9;">
-          <td style="padding:6px 0;font-size:13px;color:#1e293b;">${f.name}</td>
-          <td style="padding:6px 0;font-size:13px;font-weight:700;text-align:right;color:${f.val >= f.max ? '#00c896' : f.val === 0 ? '#ff4757' : '#f5a800'};">${f.val}</td>
-          <td style="padding:6px 0;font-size:13px;color:#94a3b8;text-align:right;">${f.max}</td>
-        </tr>`).join('')}
-        <tr style="border-top:2px solid #e2e8f0;">
-          <td style="padding:8px 0;font-size:13px;font-weight:700;color:#1e293b;">Total Score</td>
-          <td style="padding:8px 0;font-size:16px;font-weight:700;text-align:right;color:${r.approvalScore >= 8 ? '#00c896' : r.approvalScore >= 6 ? '#f5a800' : '#ff4757'};">${r.approvalScore}</td>
-          <td style="padding:8px 0;font-size:13px;color:#94a3b8;text-align:right;">10</td>
-        </tr>
-      </tbody>
+  <!-- Header -->
+  <tr><td style="background:#0f172a;border-radius:10px 10px 0 0;padding:20px 28px;">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td>
+          <div style="color:#fff;font-size:22px;font-weight:700;letter-spacing:.5px;font-family:Arial,sans-serif;">ICO Intelligence</div>
+          <div style="color:rgba(255,255,255,.4);font-size:11px;font-family:monospace;margin-top:2px;">Powered by Kelley Blue Book</div>
+        </td>
+        <td align="right">
+          <span style="background:${color};color:#fff;font-size:12px;font-weight:700;padding:6px 14px;border-radius:5px;letter-spacing:.5px;">${verdictLabel}</span>
+        </td>
+      </tr>
     </table>
-    ${r.nearbyBCNote ? `<div style="margin-top:8px;font-size:12px;color:#92400e;background:#fffbeb;padding:8px 10px;border-radius:5px;">${r.nearbyBCNote}</div>` : ''}
-    ` : ''}
-  </div>
+  </td></tr>
 
-  ${!isAuto ? `
-  <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;margin-bottom:20px;">
-    <p style="margin:0 0 12px;font-size:13px;color:#92400e;">
-      <strong>Timer started.</strong> Response time is being tracked for reporting purposes.
-    </p>
-    <div style="display:flex;gap:10px;">
-      <a href="${approveUrl}" style="background:#00c896;color:#fff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;">✓ Approve</a>
-      <a href="${declineUrl}" style="background:#ff4757;color:#fff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;">✗ Decline</a>
-      <a href="${zipUrl}" style="background:#f1f5f9;color:#1e293b;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;">View in ICO Intelligence →</a>
+  <!-- Title bar -->
+  <tr><td style="background:${color}18;border-left:4px solid ${color};border-right:1px solid #e2e8f0;padding:14px 28px;">
+    <div style="font-size:16px;font-weight:700;color:#0f172a;">${isAuto ? '✓ Auto-Approved Reservation' : '🔔 New BC Reservation — Action Required'}</div>
+    <div style="font-size:12px;color:#64748b;margin-top:3px;">Submitted ${submittedTime} ET by ${r.reservedBy}</div>
+  </td></tr>
+
+  <!-- Main content -->
+  <tr><td style="background:#ffffff;border:1px solid #e2e8f0;border-top:none;padding:24px 28px;">
+
+    <!-- Key details -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
+      <tr style="background:#f8fafc;">
+        <td style="padding:10px 14px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;width:160px;">Dealer</td>
+        <td style="padding:10px 14px;font-size:14px;font-weight:700;color:#0f172a;">${r.dealerName}</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 14px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Zip / Market</td>
+        <td style="padding:10px 14px;font-size:13px;color:#1e293b;">${r.zip} — ${r.city}, ${r.state} (${r.dma})</td>
+      </tr>
+      <tr style="background:#f8fafc;">
+        <td style="padding:10px 14px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Leads Requested</td>
+        <td style="padding:10px 14px;font-size:15px;font-weight:700;color:${color};">${r.leadsReserved ? r.leadsReserved.toLocaleString() : '—'}/mo</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 14px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">RSM</td>
+        <td style="padding:10px 14px;font-size:13px;color:#1e293b;">${r.reservedBy}${r.reservedByEmail ? ' · ' + r.reservedByEmail : ''}</td>
+      </tr>
+      ${r.notes ? `<tr style="background:#f8fafc;"><td style="padding:10px 14px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Notes</td><td style="padding:10px 14px;font-size:13px;color:#1e293b;font-style:italic;">${r.notes}</td></tr>` : ''}
+    </table>
+
+    <!-- Approval Score -->
+    <div style="margin-bottom:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <span style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;">Approval Likelihood Score</span>
+        <span style="font-size:20px;font-weight:700;color:${scoreColor};">${r.approvalScore != null ? r.approvalScore : '—'}<span style="font-size:13px;color:#94a3b8;">/10</span></span>
+      </div>
+      <div style="background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden;">
+        <div style="background:${scoreColor};height:8px;width:${scoreWidth}%;border-radius:4px;"></div>
+      </div>
     </div>
-  </div>
-  ` : `
-  <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:16px;margin-bottom:20px;">
-    <p style="margin:0;font-size:13px;color:#15803d;">
-      This reservation was <strong>auto-approved</strong> based on strong base availability. No action required — this is for your awareness only.
-    </p>
-  </div>
-  `}
 
-  <div style="font-size:11px;color:#94a3b8;text-align:center;margin-bottom:8px;">
-    Note: ICO Intelligence shows current market availability. The RSM's reservation is visible in the Active Reservations panel.
-  </div>
-  <a href="${zipUrl}" style="display:block;text-align:center;background:#0f172a;color:#fff;padding:12px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;">Open ${r.zip} in ICO Intelligence →</a>
+    <!-- Availability -->
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:20px;">
+      <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Market Availability</div>
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="padding:4px 0;font-size:13px;color:#1e293b;">Base Zip Pool</td>
+          <td align="right" style="font-size:13px;font-weight:700;color:${av && av.base < 0 ? '#ff4757' : '#00c896'};">${av && av.base != null ? av.base.toLocaleString() : '—'} leads</td>
+        </tr>
+        <tr><td style="padding:4px 0;font-size:13px;color:#1e293b;">Best within 15mi</td><td align="right" style="font-size:13px;font-weight:700;color:#1e293b;">${av && av.best15 != null ? av.best15.toLocaleString() : '—'} available</td></tr>
+        <tr><td style="padding:4px 0;font-size:13px;color:#1e293b;">Best within 30mi</td><td align="right" style="font-size:13px;font-weight:700;color:#1e293b;">${av && av.best30 != null ? av.best30.toLocaleString() : '—'} available</td></tr>
+        <tr><td style="padding:4px 0;font-size:13px;color:#1e293b;">Best within 45mi</td><td align="right" style="font-size:13px;font-weight:700;color:#1e293b;">${av && av.best45 != null ? av.best45.toLocaleString() : '—'} available</td></tr>
+      </table>
+    </div>
 
-  <p style="margin:16px 0 0;font-size:11px;color:#94a3b8;text-align:center;">
-    Reservation expires ${new Date(r.expiresAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})} · ID: ${r.id.slice(-8)}
-  </p>
-</div>
-</body></html>`
+    <!-- Why verdict -->
+    <div style="background:${color}0d;border:1px solid ${color}30;border-radius:8px;padding:16px;margin-bottom:20px;">
+      <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Why ${verdictLabel}?</div>
+      <div style="font-size:13px;color:#1e293b;line-height:1.7;">
+        ${r.verdict === 'APPROVED' ? 'Base zip availability covers the full requested lead volume. No ring booster needed. Strong approval candidate.' : ''}
+        ${r.verdict === 'APPROVABLE' ? `Base zip is over-allocated by <strong>${av && av.base < 0 ? Math.abs(av.base).toLocaleString() : '?'} leads</strong>, but a neighboring zip within 15–30 miles has <strong>${av && av.best15 ? av.best15.toLocaleString() : av && av.best30 ? av.best30.toLocaleString() : '?'} leads available</strong> — sufficient to cover the request using the ICO Ops puzzle approach. Please verify the ring booster zip and confirm the radius overlap is sufficient.` : ''}
+        ${r.verdict === 'REVIEW_REQUIRED' ? `${r.leadsReserved >= 600 ? '<strong>600+ lead request</strong> — all large opportunities require manual ICO Ops review for dealer readiness. ' : ''}${av && av.base < 0 ? `Base zip is over-allocated by <strong>${Math.abs(av.base).toLocaleString()} leads</strong>. ` : ''}${av && av.best15 === 0 && av.best30 === 0 ? 'Inner rings show no availability — only the 30–45mi outer ring has capacity. Radius overlap requires manual assessment.' : 'Market constraints require manual review.'}` : ''}
+      </div>
+      ${r.nearbyBCNote ? `<div style="margin-top:10px;font-size:12px;color:#92400e;background:#fffbeb;padding:8px 10px;border-radius:5px;">⚠ ${r.nearbyBCNote}</div>` : ''}
+      ${r.scoreBreakdown ? `
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;border-top:1px solid ${color}20;padding-top:10px;">
+        ${r.scoreBreakdown.map(f => `<tr>
+          <td style="padding:3px 0;font-size:12px;color:#475569;">${f.name}</td>
+          <td align="right" style="font-size:12px;font-weight:700;color:${f.val >= f.max ? '#00c896' : f.val === 0 ? '#ff4757' : '#f5a800'};">${f.val}/${f.max}</td>
+        </tr>`).join('')}
+        <tr style="border-top:1px solid #e2e8f0;">
+          <td style="padding:6px 0;font-size:13px;font-weight:700;color:#0f172a;">Total</td>
+          <td align="right" style="font-size:15px;font-weight:700;color:${scoreColor};">${r.approvalScore}/10</td>
+        </tr>
+      </table>` : ''}
+    </div>
+
+    ${!isAuto ? `
+    <!-- Timer note -->
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#92400e;">
+      <strong>Timer started.</strong> Response time is tracked for reporting. Reply speed matters — time kills deals.
+    </div>
+
+    <!-- Single CTA -->
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td align="center">
+          <a href="${viewUrl}" style="display:inline-block;background:#0f172a;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;letter-spacing:.5px;">
+            Review &amp; Action in ICO Intelligence →
+          </a>
+        </td>
+      </tr>
+      <tr><td align="center" style="padding-top:10px;font-size:11px;color:#94a3b8;">
+        Opens ICO Intelligence with this reservation pre-loaded. Enter your Ops PIN to approve or decline.
+      </td></tr>
+    </table>
+    ` : `
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:14px;font-size:13px;color:#15803d;">
+      This reservation was <strong>auto-approved</strong> based on strong base availability. No action required — for your awareness only.
+    </div>
+    `}
+
+  </td></tr>
+
+  <!-- Footer -->
+  <tr><td style="background:#0f172a;border-radius:0 0 10px 10px;padding:14px 28px;">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="font-size:11px;color:rgba(255,255,255,.3);">
+          Reservation expires ${new Date(r.expiresAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})} · ID: ${r.id ? r.id.slice(-8) : '—'}
+        </td>
+        <td align="right" style="font-size:11px;color:rgba(255,255,255,.3);">ICO Intelligence · Kelley Blue Book</td>
+      </tr>
+    </table>
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>`
 }
 
 function rsmEmailHtml(r, approved) {
@@ -222,9 +262,11 @@ export default async function handler(req, res) {
       if (!reservation.reservedByEmail) {
         return res.status(200).json({ ok: false, reason: 'no_rsm_email' })
       }
+      // In test mode: always send to verified Gmail since Resend free tier restricts recipients
+      const rsmTo = OPS_EMAIL  // TODO: change to reservation.reservedByEmail after domain verification
       const emailResult = await sendEmail(
-        reservation.reservedByEmail,
-        `[ICO Intelligence] Your reservation for ${reservation.dealerName} has been ${approved ? 'APPROVED' : 'DECLINED'}`,
+        rsmTo,
+        `[ICO Intelligence] ${approved ? '✓ APPROVED' : '✗ DECLINED'} — ${reservation.dealerName} (${reservation.zip})`,
         rsmEmailHtml(reservation, approved)
       )
       return res.status(200).json({ ok: true, emailResult })
