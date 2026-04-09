@@ -880,28 +880,34 @@ export default function App() {
 
   useEffect(() => { loadReservations() }, [loadReservations])
 
-  // Poll for reservation status changes every 30s (RSM gets notified in-app)
-  const prevOpsStatuses = React.useRef({})
+  // Poll for reservation status changes every 20s (RSM gets notified in-app)
+  const prevOpsStatuses = React.useRef(null)  // null = not yet initialized
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
         const data = await fetchReservations()
-        // Check if any reservation changed from PENDING to APPROVED/DECLINED
-        data.forEach(r => {
-          if (!r.opsStatus || r.opsStatus === 'PENDING') return
-          const prev = prevOpsStatuses.current[r.id]
-          if (prev === 'PENDING' && (r.opsStatus === 'APPROVED' || r.opsStatus === 'DECLINED')) {
-            const color = r.opsStatus === 'APPROVED' ? 'success' : 'error'
-            showToast(
-              `${r.opsStatus === 'APPROVED' ? '✓' : '✗'} ${r.dealerName} (${r.zip}) ${r.opsStatus.toLowerCase()} by ICO Ops${r.elapsedMinutes ? ' in ' + r.elapsedMinutes + 'm' : ''}`,
-              color
-            )
-          }
-          prevOpsStatuses.current[r.id] = r.opsStatus
-        })
+        if (prevOpsStatuses.current === null) {
+          // First poll — just initialize, don't fire toasts
+          const init = {}
+          data.forEach(r => { if (r.opsStatus) init[r.id] = r.opsStatus })
+          prevOpsStatuses.current = init
+        } else {
+          // Subsequent polls — check for changes
+          data.forEach(r => {
+            if (!r.opsStatus) return
+            const prev = prevOpsStatuses.current[r.id]
+            if (prev === 'PENDING' && (r.opsStatus === 'APPROVED' || r.opsStatus === 'DECLINED')) {
+              showToast(
+                `${r.opsStatus === 'APPROVED' ? '✓' : '✗'} ${r.dealerName} (${r.zip}) ${r.opsStatus.toLowerCase()} by ICO Ops${r.elapsedMinutes ? ' in ' + r.elapsedMinutes + 'm' : ''}`,
+                r.opsStatus === 'APPROVED' ? 'success' : 'error'
+              )
+            }
+            prevOpsStatuses.current[r.id] = r.opsStatus
+          })
+        }
         setReservations(data)
       } catch(e) {}
-    }, 30000)
+    }, 20000)
     return () => clearInterval(interval)
   }, [])
 

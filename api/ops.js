@@ -69,17 +69,16 @@ export default async function handler(req, res) {
 
       // Notify RSM via /api/notify
       const reservation = all[idx]
-      if (reservation.reservedByEmail) {
-        await fetch(`${process.env.APP_URL || 'https://ico-availability.vercel.app'}/api/notify`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'notify_rsm',
-            reservation,
-            approved: action === 'approve'
+      // Always send RSM notification (in test mode goes to OPS_EMAIL regardless)
+      await fetch(`${process.env.APP_URL || 'https://ico-availability.vercel.app'}/api/notify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'notify_rsm',
+          reservation,
+          approved: action === 'approve'
           })
-        }).catch(e => console.error('RSM notify failed:', e))
-      }
+      }).catch(e => console.error('RSM notify failed:', e))
 
       return res.status(200).json({ ok: true, reservation: all[idx], opsName })
     } catch(e) { return res.status(500).json({ error: e.message }) }
