@@ -28,7 +28,7 @@ export default async function handler(req, res) {
       parsedRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
     }
     if (!parsedRows) return res.status(400).json({ error: 'Missing rows or fileData' })
-    const rows = parsedRows
+    // Use parsedRows throughout (avoids redeclaring 'parsedRows')
 
     const today = new Date().toLocaleDateString('en-US', { month:'numeric', day:'numeric', year:'2-digit' })
 
@@ -37,8 +37,8 @@ export default async function handler(req, res) {
       // Columns: DMACode, ZipCode, Radius, City, State, DMA, LeadsSold, Available
       const matMap = {}
       let curDMA = ''
-      for (let i = 1; i < rows.length; i++) {
-        const row = rows[i]
+      for (let i = 1; i < parsedRows.length; i++) {
+        const row = parsedRows[i]
         const dmaCol = row[5] ? String(row[5]).trim().toUpperCase() : ''
         if (dmaCol && dmaCol !== 'NAN') curDMA = dmaCol
         const zr = row[1]
@@ -84,7 +84,7 @@ export default async function handler(req, res) {
       // Columns: SVOC(0), BC Status(1), Group(2), Dealer(3), Product Name(4),
       //          Rate(5), Market Rates(6), DAT Target(7), Dealer Zip(8), 
       //          Available Leads(9), Dealer DMA(10), Code(11)
-      const headers = rows[0] ? rows[0].map(h => h ? String(h).toLowerCase().trim() : '') : []
+      const headers = parsedRows[0] ? parsedRows[0].map(h => h ? String(h).toLowerCase().trim() : '') : []
       
       // Use exact column name matching with fallback to position
       const findCol = (exact, fallbackIdx) => {
@@ -102,8 +102,8 @@ export default async function handler(req, res) {
       const svocIdx   = findCol('svoc', 0)
 
       const dealerMap = {}
-      for (let i = 1; i < rows.length; i++) {
-        const row = rows[i]
+      for (let i = 1; i < parsedRows.length; i++) {
+        const row = parsedRows[i]
         if (!row[zipIdx] && row[zipIdx] !== 0) continue
         let z
         try { z = String(parseInt(String(row[zipIdx]).replace(/[^0-9]/g,''))).padStart(5,'0') } catch { continue }
@@ -150,17 +150,17 @@ export default async function handler(req, res) {
       // Parse Dealer List — monthly performance data
       // Store as zip -> [dec, jan, feb, mar] leads and pcts
       let headerRow = 0
-      for (let i = 0; i < Math.min(5, rows.length); i++) {
-        if (rows[i].some(v => v && String(v).toLowerCase().includes('zip'))) {
+      for (let i = 0; i < Math.min(5, parsedRows.length); i++) {
+        if (parsedRows[i].some(v => v && String(v).toLowerCase().includes('zip'))) {
           headerRow = i; break
         }
       }
-      const headers = rows[headerRow].map(h => h ? String(h).toLowerCase().trim() : '')
+      const headers = parsedRows[headerRow].map(h => h ? String(h).toLowerCase().trim() : '')
       const zipIdx = headers.findIndex(h => h.includes('zip'))
 
       const perfMap = {}
-      for (let i = headerRow + 1; i < rows.length; i++) {
-        const row = rows[i]
+      for (let i = headerRow + 1; i < parsedRows.length; i++) {
+        const row = parsedRows[i]
         if (!row[zipIdx]) continue
         let z
         try { z = String(parseInt(row[zipIdx])).padStart(5,'0') } catch { continue }
