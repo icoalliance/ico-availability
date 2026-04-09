@@ -722,24 +722,33 @@ function UpdateModal({ onClose, onDataUpdated }) {
     setMsg(ft, 'Reading file…', 'info')
 
     try {
-      // Read file as base64
-      const base64 = await new Promise((resolve, reject) => {
+      // Read file as ArrayBuffer for client-side parsing
+      const arrayBuffer = await new Promise((resolve, reject) => {
         const reader = new FileReader()
-        reader.onload = () => resolve(reader.result.split(',')[1])
+        reader.onload = () => resolve(reader.result)
         reader.onerror = reject
-        reader.readAsDataURL(file)
+        reader.readAsArrayBuffer(file)
       })
 
-      setMsg(ft, 'Uploading and processing…', 'info')
+      setMsg(ft, 'Parsing file…', 'info')
 
+      // Parse xlsx client-side using the xlsx library
+      const XLSX = await import('xlsx')
+      const wb = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' })
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
+
+      setMsg(ft, 'Uploading…', 'info')
+
+      // Send parsed rows (not raw file) to avoid body size limits
       const res = await fetch('/api/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileData: base64, fileType: ft, fileName: file.name })
+        body: JSON.stringify({ rows, fileType: ft, fileName: file.name })
       })
 
       if (!res.ok) {
-        const err = await res.json()
+        const err = await res.json().catch(() => ({ error: 'Server error' }))
         throw new Error(err.error || 'Upload failed')
       }
 

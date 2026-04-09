@@ -16,14 +16,19 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const { fileData, fileType, fileName } = req.body
-    if (!fileData || !fileType) return res.status(400).json({ error: 'Missing fileData or fileType' })
+    const { rows, fileData, fileType, fileName } = req.body
+    if (!fileType) return res.status(400).json({ error: 'Missing fileType' })
 
-    // Decode base64 file
-    const buffer = Buffer.from(fileData, 'base64')
-    const wb = XLSX.read(buffer, { type: 'buffer' })
-    const ws = wb.Sheets[wb.SheetNames[0]]
-    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
+    let parsedRows = rows
+    // Fallback: if rows not provided, decode base64 (legacy support)
+    if (!parsedRows && fileData) {
+      const buffer = Buffer.from(fileData, 'base64')
+      const wb = XLSX.read(buffer, { type: 'buffer' })
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      parsedRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
+    }
+    if (!parsedRows) return res.status(400).json({ error: 'Missing rows or fileData' })
+    const rows = parsedRows
 
     const today = new Date().toLocaleDateString('en-US', { month:'numeric', day:'numeric', year:'2-digit' })
 
