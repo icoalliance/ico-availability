@@ -32,12 +32,13 @@ async function sendEmail(to, subject, html) {
   return { ok: res.ok, data }
 }
 
-// Geocode dealer name + zip → { lat, lng, formattedAddress }
+// Find dealer location using Places Text Search (finds actual business, not zip centroid)
 async function geocodeDealer(dealerName, zip) {
   if (!MAPS_KEY) return null
   try {
+    // Places Text Search is more accurate for business locations than Geocoding API
     const query = encodeURIComponent(`${dealerName} ${zip}`)
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${query}&key=${MAPS_KEY}`
+    const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${query}&key=${MAPS_KEY}`
     const res = await fetch(url)
     const data = await res.json()
     if (data.status === 'OK' && data.results[0]) {
@@ -48,8 +49,21 @@ async function geocodeDealer(dealerName, zip) {
         formattedAddress: data.results[0].formatted_address
       }
     }
+    // Fallback: try with "car dealership" added for better specificity
+    const query2 = encodeURIComponent(`${dealerName} car dealership ${zip}`)
+    const url2 = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${query2}&key=${MAPS_KEY}`
+    const res2 = await fetch(url2)
+    const data2 = await res2.json()
+    if (data2.status === 'OK' && data2.results[0]) {
+      const loc = data2.results[0].geometry.location
+      return {
+        lat: loc.lat,
+        lng: loc.lng,
+        formattedAddress: data2.results[0].formatted_address
+      }
+    }
   } catch(e) {
-    console.error('Geocode failed:', e)
+    console.error('Places search failed:', e)
   }
   return null
 }

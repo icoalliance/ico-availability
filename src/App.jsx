@@ -356,7 +356,17 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, seller
         const currentTarget = bcType === 'upsell' && dealer.trim() ? (() => {
           const dmaKey = zipInfo.dma?.toUpperCase()
           const entries = dealerMapData?.[dmaKey] || []
-          const match = entries.find(e => e[0] === zipInfo.zip)
+          const dealerLower = dealer.trim().toLowerCase()
+          // Match by dealer name (fuzzy) across all entries in the DMA
+          // Dealer array: [zip, name, group, rate, mktRate, target, avail, svoc, ...]
+          const match = entries.find(e => {
+            if (!e[1]) return false
+            const eName = e[1].toLowerCase()
+            // Check if dealer name contains our search or vice versa
+            return eName.includes(dealerLower) || dealerLower.includes(eName) ||
+              // Also try word-level match for common abbreviations
+              dealerLower.split(' ').filter(w => w.length > 3).every(w => eName.includes(w))
+          })
           return match ? match[5] : null  // index 5 = DAT Target
         })() : null
 
