@@ -60,6 +60,17 @@ export default async function handler(req, res) {
         elapsedMinutes: null,
         groupId: body.groupId || null,
         svoc: body.svoc || null,
+        // Qualification fields
+        bcType: body.bcType || 'new',
+        dealerType: body.dealerType || 'franchise',
+        hasCrm: body.hasCrm !== undefined ? body.hasCrm : null,
+        inventorySize: body.inventorySize || null,
+        currentDealerTarget: body.currentDealerTarget || null,
+        marketTier: body.marketTier || null,
+        tierMinLeads: body.tierMinLeads || null,
+        // Email fields
+        scoreBreakdown: body.scoreBreakdown || null,
+        nearbyBCNote: body.nearbyBCNote || null,
       }
 
       const all = await kv.get(KEY) || []
