@@ -138,10 +138,53 @@ export default async function handler(req, res) {
         updatedAt: new Date().toISOString()
       })
 
+      // Auto-activation: scan active reservations for SVOC matches
+      let activated = 0
+      try {
+        const reservations = await kv.get('ico_reservations') || []
+        // Build a set of all SVOCs in the new dealer export
+        const activeSvocs = new Set()
+        const svocToEntry = {}
+        for (const entries of Object.values(dealerMap)) {
+          for (const entry of entries) {
+            const svoc = entry[7]
+            if (svoc) {
+              activeSvocs.add(String(svoc).trim())
+              svocToEntry[String(svoc).trim()] = entry
+            }
+          }
+        }
+
+        let changed = false
+        for (let i = 0; i < reservations.length; i++) {
+          const r = reservations[i]
+          if (r.status !== 'active' && r.status !== 'expired') continue
+          if (r.opsStatus !== 'APPROVED' && r.opsStatus !== 'PENDING') continue
+          if (!r.svoc) continue
+
+          const svoc = String(r.svoc).trim()
+          if (activeSvocs.has(svoc)) {
+            reservations[i] = {
+              ...r,
+              status: 'activated',
+              activatedAt: new Date().toISOString(),
+              activatedViaSvoc: svoc,
+            }
+            activated++
+            changed = true
+          }
+        }
+
+        if (changed) await kv.set('ico_reservations', reservations)
+      } catch(e) {
+        console.error('Auto-activation check failed:', e)
+      }
+
       return res.status(200).json({
         ok: true, type: 'dealer',
         dmas: Object.keys(dealerMap).length,
         dealers: Object.values(dealerMap).flat().length,
+        activated,
         date: today
       })
     }

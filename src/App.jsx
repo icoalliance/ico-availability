@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 import { calcAvailability, getZipInfo, fmtN, fmtPct, LPO } from './utils'
-import { fetchReservations, createReservation, cancelReservation, daysUntil, fmtDate } from './api'
+import { fetchReservations, createReservation, cancelReservation, updateReservation, daysUntil, fmtDate } from './api'
 import { dealerMap } from './dealerMap'
 import { KBB_LOGO_B64 } from './kbbLogo'
 import { coordsMap } from './coordsMap'
@@ -210,6 +210,42 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, seller
     .filter(r => r.zip === zipInfo.zip && r.status === 'active')
     .reduce((s,r) => s + r.leadsReserved, 0)
 
+  // Reactive dealer match — recomputes on dealer name, bcType, or dma change
+  // Returns { target, svoc } for upsells, or just { svoc } for new BCs
+  const dealerMatch = React.useMemo(() => {
+    if (!dealer.trim() || !dealerMapData) return null
+    const dmaKey = zipInfo.dma?.toUpperCase()
+    const entries = dealerMapData[dmaKey] || []
+    const dealerLower = dealer.trim().toLowerCase()
+    // Search all DMAs if not found in current DMA (dealer may be in adjacent market)
+    let match = entries.find(e => {
+      if (!e[1]) return false
+      const eName = e[1].toLowerCase()
+      return eName.includes(dealerLower) || dealerLower.includes(eName) ||
+        dealerLower.split(' ').filter(w => w.length > 3).every(w => eName.includes(w))
+    })
+    // Fallback: search all DMAs
+    if (!match) {
+      for (const dmaEntries of Object.values(dealerMapData)) {
+        match = dmaEntries.find(e => {
+          if (!e[1]) return false
+          const eName = e[1].toLowerCase()
+          return eName.includes(dealerLower) || dealerLower.includes(eName) ||
+            dealerLower.split(' ').filter(w => w.length > 3).every(w => eName.includes(w))
+        })
+        if (match) break
+      }
+    }
+    if (!match) return null
+    return {
+      target: match[5] || null,   // DAT Target
+      svoc: match[7] || null,     // SVOC
+      name: match[1] || null,     // Matched dealer name
+    }
+  }, [dealer, dealerMapData, zipInfo.dma])
+
+  const currentTarget = bcType === 'upsell' ? (dealerMatch?.target || null) : null
+
   const expires = new Date(Date.now() + 14 * 86400000)
 
   async function submit() {
@@ -258,6 +294,8 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, seller
         })() : null,
         bcType,
         dealerType,
+        currentDealerTarget: currentTarget || null,
+        svoc: dealerMatch?.svoc || null,
         marketTier: getDmaTier(zipInfo.dma),
         tierMinLeads: getTierMinLeads(getDmaTier(zipInfo.dma)),
         hasCrm,
@@ -352,24 +390,6 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, seller
         const leadsNum = parseInt(leads) || 0
         const threshold = bcType === 'upsell' ? 600 : 400
         const overThreshold = leadsNum > threshold
-        // Find current target if upsell
-        const currentTarget = bcType === 'upsell' && dealer.trim() ? (() => {
-          const dmaKey = zipInfo.dma?.toUpperCase()
-          const entries = dealerMapData?.[dmaKey] || []
-          const dealerLower = dealer.trim().toLowerCase()
-          // Match by dealer name (fuzzy) across all entries in the DMA
-          // Dealer array: [zip, name, group, rate, mktRate, target, avail, svoc, ...]
-          const match = entries.find(e => {
-            if (!e[1]) return false
-            const eName = e[1].toLowerCase()
-            // Check if dealer name contains our search or vice versa
-            return eName.includes(dealerLower) || dealerLower.includes(eName) ||
-              // Also try word-level match for common abbreviations
-              dealerLower.split(' ').filter(w => w.length > 3).every(w => eName.includes(w))
-          })
-          return match ? match[5] : null  // index 5 = DAT Target
-        })() : null
-
         return (
         <div style={{marginTop:12}}>
 
@@ -483,8 +503,208 @@ function ReserveBox({ zipInfo, desired, reserved, onReserved, sellerName, seller
 }
 
 
+
+// ── Edit Reservation Modal ─────────────────────────────────────────────────
+function EditReservationModal({ reservation, onSave, onClose, dealerMapData, av, sellerName, sellerEmail }) {
+  const r = reservation
+  const [dealer, setDealer] = useState(r.dealerName || '')
+  const [leads, setLeads] = useState(String(r.leadsReserved || ''))
+  const [notes, setNotes] = useState(r.notes || '')
+  const [bcType, setBcType] = useState(r.bcType || 'new')
+  const [dealerType, setDealerType] = useState(r.dealerType || 'franchise')
+  const [hasCrm, setHasCrm] = useState(r.hasCrm !== undefined ? r.hasCrm : null)
+  const [inventorySize, setInventorySize] = useState(r.inventorySize || '')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  // Reactive dealer match for upsell target + SVOC
+  const dealerMatch = React.useMemo(() => {
+    if (!dealer.trim() || !dealerMapData) return null
+    const dmaKey = r.dma?.toUpperCase()
+    const entries = dealerMapData[dmaKey] || []
+    const dealerLower = dealer.trim().toLowerCase()
+    let match = entries.find(e => {
+      if (!e[1]) return false
+      const eName = e[1].toLowerCase()
+      return eName.includes(dealerLower) || dealerLower.includes(eName) ||
+        dealerLower.split(' ').filter(w => w.length > 3).every(w => eName.includes(w))
+    })
+    if (!match) {
+      for (const dmaEntries of Object.values(dealerMapData)) {
+        match = dmaEntries.find(e => {
+          if (!e[1]) return false
+          const eName = e[1].toLowerCase()
+          return eName.includes(dealerLower) || dealerLower.includes(eName) ||
+            dealerLower.split(' ').filter(w => w.length > 3).every(w => eName.includes(w))
+        })
+        if (match) break
+      }
+    }
+    if (!match) return null
+    return { target: match[5] || null, svoc: match[7] || null, name: match[1] || null }
+  }, [dealer, dealerMapData, r.dma])
+
+  const currentTarget = bcType === 'upsell' ? (dealerMatch?.target || null) : null
+
+  async function save() {
+    if (!dealer.trim()) { setError('Dealer name is required.'); return }
+    if (!leads || parseInt(leads) < 1) { setError('Enter a valid lead amount.'); return }
+    if (hasCrm === null) { setError('Please indicate whether dealer has a CRM.'); return }
+    setError(''); setLoading(true)
+
+    try {
+      const leadsNum = parseInt(leads)
+      const threshold = bcType === 'upsell' ? 600 : 400
+
+      // Recompute verdict based on new values
+      const baseVerdict = r.verdict === 'DENIED' ? 'DENIED' : r.verdict
+      const newVerdict = leadsNum > threshold && baseVerdict !== 'DENIED'
+        ? 'REVIEW_REQUIRED' : baseVerdict
+
+      const updated = await updateReservation(r.id, {
+        dealerName: dealer.trim(),
+        leadsReserved: leadsNum,
+        notes: notes.trim(),
+        bcType, dealerType, hasCrm,
+        inventorySize: dealerType === 'independent' ? inventorySize : null,
+        currentDealerTarget: currentTarget || null,
+        svoc: dealerMatch?.svoc || r.svoc || null,
+        verdict: newVerdict,
+        marketTier: r.marketTier,
+        tierMinLeads: r.tierMinLeads,
+        approvalScore: r.approvalScore,
+        scoreBreakdown: r.scoreBreakdown,
+        nearbyBCNote: r.nearbyBCNote,
+      })
+
+      // Re-notify ops if verdict-relevant fields changed
+      const changed = dealer.trim() !== r.dealerName || leadsNum !== r.leadsReserved || bcType !== r.bcType
+      if (changed && ['APPROVED','APPROVABLE','REVIEW_REQUIRED'].includes(newVerdict)) {
+        fetch('/api/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'submit_to_ops',
+            reservation: { ...updated, reservedBy: sellerName, reservedByEmail: sellerEmail },
+            av
+          })
+        }).catch(e => console.error('Re-notify failed:', e))
+      }
+
+      onSave(updated)
+    } catch(e) {
+      setError(e.message)
+    }
+    setLoading(false)
+  }
+
+  const leadsNum = parseInt(leads) || 0
+  const threshold = bcType === 'upsell' ? 600 : 400
+  const overThreshold = leadsNum > threshold
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box" style={{maxWidth:540}}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Edit Reservation</div>
+            <div className="modal-sub">{r.zip} · {r.city}, {r.state} · {r.dma}</div>
+          </div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div style={{padding:'20px 24px',display:'flex',flexDirection:'column',gap:12}}>
+          {/* Dealer Name */}
+          <div className="reserve-field">
+            <label className="reserve-field-label">Dealer Name *</label>
+            <input className="reserve-input" value={dealer} onChange={e => setDealer(e.target.value)} />
+          </div>
+
+          {/* BC Type / Dealer Type / CRM row */}
+          <div className="reserve-qual-row">
+            <div className="reserve-field">
+              <label className="reserve-field-label">BC Type</label>
+              <div className="reserve-toggle-group">
+                <button className={`reserve-toggle reserve-toggle-half ${bcType==='new'?'active':''}`} onClick={()=>setBcType('new')}>New BC</button>
+                <button className={`reserve-toggle reserve-toggle-half ${bcType==='upsell'?'active':''}`} onClick={()=>setBcType('upsell')}>Upsell</button>
+              </div>
+            </div>
+            <div className="reserve-field">
+              <label className="reserve-field-label">Dealer Type</label>
+              <div className="reserve-toggle-group">
+                <button className={`reserve-toggle reserve-toggle-half ${dealerType==='franchise'?'active':''}`} onClick={()=>setDealerType('franchise')}>Franchise</button>
+                <button className={`reserve-toggle reserve-toggle-half ${dealerType==='independent'?'active':''}`} onClick={()=>setDealerType('independent')}>Independent</button>
+              </div>
+            </div>
+            <div className="reserve-field">
+              <label className="reserve-field-label">Has CRM?</label>
+              <div className="reserve-toggle-group">
+                <button className={`reserve-toggle reserve-toggle-half ${hasCrm===true?'active':''}`} onClick={()=>setHasCrm(true)}>Yes</button>
+                <button className={`reserve-toggle reserve-toggle-half ${hasCrm===false?'active':''}`} onClick={()=>setHasCrm(false)}>No</button>
+              </div>
+            </div>
+            {dealerType === 'independent' && (
+              <div className="reserve-field">
+                <label className="reserve-field-label">Vehicle Inventory</label>
+                <select className="reserve-input" value={inventorySize} onChange={e=>setInventorySize(e.target.value)}>
+                  <option value="">Select size</option>
+                  <option value="<50">&lt;50 vehicles</option>
+                  <option value="50-150">50–150 vehicles</option>
+                  <option value="150-300">150–300 vehicles</option>
+                  <option value="300+">300+ vehicles</option>
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Upsell context */}
+          {bcType === 'upsell' && currentTarget && (
+            <div style={{background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:6,padding:'8px 12px',fontSize:12,color:'#1e40af'}}>
+              Current target: <strong>{fmtN(currentTarget)} leads/mo</strong> — requesting {fmtN(leadsNum)} more = <strong>{fmtN(currentTarget + leadsNum)} total</strong>
+              {currentTarget + leadsNum > 600 && <span style={{color:'var(--red)',fontWeight:700}}> · Exceeds 600 — escalation required</span>}
+            </div>
+          )}
+
+          {/* Lead Amount */}
+          <div className="reserve-field" style={{maxWidth:200}}>
+            <label className="reserve-field-label">
+              Lead Amount * <span style={{fontWeight:400,color:'var(--muted)'}}>({bcType==='upsell'?'max 600':'max 400'} without escalation)</span>
+            </label>
+            <input className="reserve-input" type="number" value={leads} onChange={e=>setLeads(e.target.value)} min={1} />
+            {overThreshold && (
+              <div style={{marginTop:4,fontSize:11,color:'#c2410c',fontWeight:600}}>
+                ⚠ Over {threshold} — will be flagged as REVIEW REQUIRED
+              </div>
+            )}
+          </div>
+
+          {/* Notes */}
+          <div className="reserve-field">
+            <label className="reserve-field-label">Notes (optional)</label>
+            <input className="reserve-input" value={notes} onChange={e=>setNotes(e.target.value)} />
+          </div>
+
+          {/* Re-notify warning */}
+          <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:6,padding:'8px 12px',fontSize:12,color:'#92400e'}}>
+            ⚠ Changing the dealer name or lead amount will re-notify ICO Ops with an updated email.
+          </div>
+
+          {error && <div style={{color:'var(--red)',fontSize:12}}>{error}</div>}
+
+          <div style={{display:'flex',gap:8,justifyContent:'flex-end',paddingTop:4}}>
+            <button className="res-cancel-btn" onClick={onClose}>Cancel</button>
+            <button className="reserve-submit-btn" style={{margin:0}} onClick={save} disabled={loading}>
+              {loading ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Reservation Slideout — DMA filtered view ─────────────────────────────
-function ReservationSlideout({ reservations, onCancel, onClose, onRefresh }) {
+function ReservationSlideout({ reservations, onCancel, onClose, onRefresh, onEdit, sellerName }) {
   const active = reservations.filter(r => r.status === 'active')
   const expired = reservations.filter(r => r.status === 'expired')
 
@@ -587,9 +807,14 @@ function ReservationSlideout({ reservations, onCancel, onClose, onRefresh }) {
                         {days <= 7 && <span className="res-days"> ({days}d)</span>}
                       </td>
                       <td>
-                        <button className="res-cancel-btn" onClick={() => onCancel(r.id)}>
-                          Release
-                        </button>
+                        <div style={{display:'flex',gap:4}}>
+                          {onEdit && sellerName && r.reservedBy === sellerName && (
+                            <button className="res-edit-btn" onClick={() => onEdit(r)}>Edit</button>
+                          )}
+                          <button className="res-cancel-btn" onClick={() => onCancel(r.id)}>
+                            Release
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -627,7 +852,7 @@ function ReservationSlideout({ reservations, onCancel, onClose, onRefresh }) {
 }
 
 // ── Reservations panel ─────────────────────────────────────────────────────
-function ReservationsPanel({ reservations, onCancel, onRefresh }) {
+function ReservationsPanel({ reservations, onCancel, onRefresh, onEdit, currentUser }) {
   const active = reservations.filter(r => r.status === 'active')
   const expired = reservations.filter(r => r.status === 'expired')
   if (reservations.length === 0) return null
@@ -661,7 +886,7 @@ function ReservationsPanel({ reservations, onCancel, onRefresh }) {
             </tr>
           </thead>
           <tbody>
-            {active.map(r => <ReservationRow key={r.id} r={r} onCancel={onCancel} />)}
+            {active.map(r => <ReservationRow key={r.id} r={r} onCancel={onCancel} onEdit={onEdit} currentUser={currentUser} />)}
             {expired.length > 0 && (
               <tr className="av-section"><td colSpan={10}>Expired ({expired.length})</td></tr>
             )}
@@ -673,7 +898,7 @@ function ReservationsPanel({ reservations, onCancel, onRefresh }) {
   )
 }
 
-function ReservationRow({ r, onCancel }) {
+function ReservationRow({ r, onCancel, onEdit, currentUser }) {
   const days = daysUntil(r.expiresAt)
   const urgency = r.status === 'active' ? (days <= 3 ? 'res-urgent' : days <= 7 ? 'res-warn' : '') : ''
   return (
@@ -685,7 +910,12 @@ function ReservationRow({ r, onCancel }) {
       <td className="td-dim">{r.notes || '—'}</td>
       <td className="td-dim">{r.reservedBy || '—'}</td>
       <td>
-        {r.opsStatus && r.opsStatus !== 'DENIED' ? (
+        {r.status === 'activated' ? (
+          <span style={{fontFamily:'var(--cond)',fontWeight:700,fontSize:10,letterSpacing:.5,
+            padding:'2px 7px',borderRadius:4,background:'#eff6ff',color:'#1d4ed8',border:'1px solid #bfdbfe'}}>
+            ACTIVATED
+          </span>
+        ) : r.opsStatus && r.opsStatus !== 'DENIED' ? (
           <span style={{
             fontFamily:'var(--cond)', fontWeight:700, fontSize:10, letterSpacing:.5,
             padding:'2px 7px', borderRadius:4,
@@ -703,9 +933,14 @@ function ReservationRow({ r, onCancel }) {
         }
       </td>
       <td>
-        {onCancel && r.status === 'active' && (
-          <button className="res-cancel-btn" onClick={() => onCancel(r.id)}>Release</button>
-        )}
+        <div style={{display:'flex',gap:4}}>
+          {onEdit && r.status === 'active' && currentUser && r.reservedBy === currentUser && (
+            <button className="res-edit-btn" onClick={() => onEdit(r)}>Edit</button>
+          )}
+          {onCancel && r.status === 'active' && (
+            <button className="res-cancel-btn" onClick={() => onCancel(r.id)}>Release</button>
+          )}
+        </div>
       </td>
     </tr>
   )
@@ -873,7 +1108,8 @@ function UpdateModal({ onClose, onDataUpdated }) {
           onDataUpdated(result.date, null)
         }
       } else if (ft === 'dealer') {
-        setMsg(ft, `✓ ${result.dealers.toLocaleString()} dealers across ${result.dmas} DMAs loaded — data date updated to ${result.date}`, 'success')
+        const activatedMsg = result.activated > 0 ? ` · ${result.activated} reservation${result.activated > 1 ? 's' : ''} auto-activated` : ''
+        setMsg(ft, `✓ ${result.dealers.toLocaleString()} dealers across ${result.dmas} DMAs loaded — data date updated to ${result.date}${activatedMsg}`, 'success')
         const dealerRes = await fetch('/api/matdata?type=dealer')
         if (dealerRes.ok) {
           const { dealerMap: liveDealer } = await dealerRes.json()
@@ -967,6 +1203,7 @@ export default function App() {
   const [showResSlideout, setShowResSlideout] = useState(false)
   const [showOpsPanel, setShowOpsPanel] = useState(false)
   const [toast, setToast] = useState(null)  // { msg, type }
+  const [editingReservation, setEditingReservation] = useState(null)
   const [opsBarId, setOpsBarId] = useState(() => new URLSearchParams(window.location.search).get('id'))
   const [opsBarAction, setOpsBarAction] = useState(() => new URLSearchParams(window.location.search).get('ops_action'))
 
@@ -1208,6 +1445,22 @@ export default function App() {
         </div>
       )}
 
+      {editingReservation && (
+        <EditReservationModal
+          reservation={editingReservation}
+          dealerMapData={liveDealerMap || dealerMap}
+          av={result?.av || null}
+          sellerName={sellerName}
+          sellerEmail={sellerEmail}
+          onSave={async (updated) => {
+            await loadReservations()
+            setEditingReservation(null)
+            showToast(`✓ ${updated.dealerName} reservation updated`, 'success')
+          }}
+          onClose={() => setEditingReservation(null)}
+        />
+      )}
+
       {opsBarId && (
         <StickyOpsBar
           reservationId={opsBarId}
@@ -1270,6 +1523,8 @@ export default function App() {
           onCancel={handleCancel}
           onClose={() => setShowResSlideout(false)}
           onRefresh={loadReservations}
+          onEdit={(r) => { setEditingReservation(r); setShowResSlideout(false) }}
+          sellerName={sellerName}
         />
       )}
 
@@ -1447,6 +1702,8 @@ export default function App() {
           reservations={reservations}
           onCancel={handleCancel}
           onRefresh={loadReservations}
+          onEdit={setEditingReservation}
+          currentUser={sellerName}
         />
       </main>
     </>

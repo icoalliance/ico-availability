@@ -36,3 +36,16 @@ export function daysUntil(isoStr) {
 export function fmtDate(isoStr) {
   return new Date(isoStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
+
+export async function updateReservation(id, data) {
+  const res = await fetch(API, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, ...data })
+  })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.error || 'Failed to update reservation')
+  }
+  return res.json()
+}
