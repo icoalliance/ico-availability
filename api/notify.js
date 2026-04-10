@@ -100,6 +100,21 @@ function buildPreQualChecklist(r) {
   const threshold = r.bcType === 'upsell' ? 600 : 400
   rows.push(checkRow('ℹ', 'BC Type', bcLabel, '', '#f8fafc'))
 
+  // 1b. Upsell breakdown — current target + increment = new total
+  if (r.bcType === 'upsell' && r.currentDealerTarget) {
+    const newTotal = r.currentDealerTarget + r.leadsReserved
+    const overCap = newTotal > 600
+    rows.push(checkRow(
+      overCap ? '✗' : '✓',
+      'Upsell Detail',
+      `${r.currentDealerTarget.toLocaleString()} + ${r.leadsReserved.toLocaleString()} = ${newTotal.toLocaleString()} leads/mo`,
+      overCap ? 'Exceeds 600 — escalation required' : `New total within 600-lead upsell cap`,
+      overCap ? '#fff0f0' : '#f0fdf4'
+    ))
+  } else if (r.bcType === 'upsell' && !r.currentDealerTarget) {
+    rows.push(checkRow('⚠', 'Upsell Detail', 'Current target not found', 'Verify current lead target with RSM', '#fffbeb'))
+  }
+
   // 2. Dealer Type
   const dtLabel = r.dealerType === 'independent' ? 'Independent' : 'Franchise'
   rows.push(checkRow('ℹ', 'Dealer Type', dtLabel, '', '#f8fafc'))
@@ -244,7 +259,7 @@ async function opsEmailHtml(r, av) {
 
   <!-- Title bar -->
   <tr><td style="background:${color}18;border-left:4px solid ${color};border-right:1px solid #e2e8f0;padding:14px 28px;">
-    <div style="font-size:16px;font-weight:700;color:#00205b;">${isAuto ? '✓ Auto-Approved Reservation' : '🔔 New BC Reservation — Action Required'}</div>
+    <div style="font-size:16px;font-weight:700;color:#00205b;">${isAuto ? '✓ Auto-Approved Reservation' : r.bcType === 'upsell' ? '🔄 Upsell Reservation — Action Required' : '🔔 New BC Reservation — Action Required'}</div>
     <div style="font-size:12px;color:#64748b;margin-top:3px;">Submitted ${submittedTime} ET by ${r.reservedBy}</div>
   </td></tr>
 
@@ -263,7 +278,13 @@ async function opsEmailHtml(r, av) {
       </tr>
       <tr style="background:#f8fafc;">
         <td style="padding:10px 14px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">Leads Requested</td>
-        <td style="padding:10px 14px;font-size:15px;font-weight:700;color:${color};">${r.leadsReserved ? r.leadsReserved.toLocaleString() : '—'}/mo</td>
+        <td style="padding:10px 14px;font-size:15px;font-weight:700;color:${color};">
+          ${r.leadsReserved ? r.leadsReserved.toLocaleString() : '—'}/mo
+          ${r.bcType === 'upsell' && r.currentDealerTarget ? 
+            `<span style="font-size:12px;font-weight:400;color:#64748b;display:block;margin-top:2px;">
+              Upsell: ${r.currentDealerTarget.toLocaleString()} current + ${r.leadsReserved.toLocaleString()} = <strong>${(r.currentDealerTarget + r.leadsReserved).toLocaleString()} total</strong>
+            </span>` : ''}
+        </td>
       </tr>
       <tr>
         <td style="padding:10px 14px;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">BC Type</td>
