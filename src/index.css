@@ -631,3 +631,7 @@ header h1 { font-family:var(--cond); font-weight:700; font-size:20px; color:#fff
 .reserve-qual-row { display:flex; gap:12px; flex-wrap:wrap; }
 .reserve-qual-row .reserve-field { flex:1; min-width:130px; }
 .reserve-toggle-half { flex:1; text-align:center; justify-content:center; }
+
+/* ── Edit Reservation Button ── */
+.res-edit-btn { background:transparent; border:1px solid rgba(0,32,91,.35); border-radius:4px; padding:3px 8px; font-size:11px; color:var(--navy); font-family:var(--sans); cursor:pointer; transition:all .15s; }
+.res-edit-btn:hover { background:var(--navy); color:#fff; border-color:var(--navy); }
