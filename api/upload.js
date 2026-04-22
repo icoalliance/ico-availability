@@ -16,109 +16,47 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   try {
-    const { rows, fileData, fileType, fileName } = req.body
+    const body = req.body
+    const { fileType, fileName } = body
     if (!fileType) return res.status(400).json({ error: 'Missing fileType' })
-
-    let parsedRows = rows
-    // Fallback: if rows not provided, decode base64 (legacy support)
-    if (!parsedRows && fileData) {
-      const buffer = Buffer.from(fileData, 'base64')
-      const wb = XLSX.read(buffer, { type: 'buffer' })
-      const ws = wb.Sheets[wb.SheetNames[0]]
-      parsedRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
-    }
-    if (!parsedRows) return res.status(400).json({ error: 'Missing rows or fileData' })
-    // Use parsedRows throughout (avoids redeclaring 'parsedRows')
 
     const today = new Date().toLocaleDateString('en-US', { month:'numeric', day:'numeric', year:'2-digit' })
 
-    if (fileType === 'mat') {
-      // Parse Opportunity Finder OLR
-      // Columns: DMACode, ZipCode, Radius, City, State, DMA, LeadsSold, Available
-      const matMap = {}
-      let curDMA = ''
-      for (let i = 1; i < parsedRows.length; i++) {
-        const row = parsedRows[i]
-        const dmaCol = row[5] ? String(row[5]).trim().toUpperCase() : ''
-        if (dmaCol && dmaCol !== 'NAN') curDMA = dmaCol
-        const zr = row[1]
-        if (!zr && zr !== 0) continue
-        let z
-        try { z = String(parseInt(zr)).padStart(5, '0') } catch { continue }
-        if (z.length !== 5) continue
-        const city = row[3] ? String(row[3]).trim() : ''
-        const state = row[4] ? String(row[4]).trim() : ''
-        let target = null, avail = null
-        try { if (row[6] !== null) target = parseInt(String(row[6]).replace(/,/g,'')) } catch {}
-        try { if (row[7] !== null) avail = parseInt(String(row[7]).replace(/,/g,'')) } catch {}
-        matMap[z] = [city, state, curDMA, target || null, avail !== undefined ? avail : null]
-      }
-
-      // Store in Redis chunks (800KB each to stay under 1MB limit)
-      const json = JSON.stringify(matMap)
-      const chunkSize = 800 * 1024
-      const chunks = []
-      for (let i = 0; i < json.length; i += chunkSize) {
-        chunks.push(json.slice(i, i + chunkSize))
-      }
-      for (let i = 0; i < chunks.length; i++) {
-        await kv.set(`ico_mat_chunk_${i}`, chunks[i])
-      }
-      await kv.set('ico_mat_meta', { 
-        chunks: chunks.length, 
-        zips: Object.keys(matMap).length,
-        date: today,
-        fileName,
-        updatedAt: new Date().toISOString()
-      })
-
-      return res.status(200).json({ 
-        ok: true, type: 'mat', 
-        zips: Object.keys(matMap).length, 
-        date: today, chunks: chunks.length 
-      })
-    }
-
+    // ── Dealer chunk upload ──────────────────────────────────────────────────
     if (fileType === 'dealer') {
-      // Receive one chunk of DMAs and merge into Redis
-      const { dealerMap: chunkMap, chunkIndex, totalChunks } = req.body
+      const { dealerMap: chunkMap, chunkIndex } = body
       if (!chunkMap || typeof chunkMap !== 'object') {
         return res.status(400).json({ error: 'Missing dealerMap chunk' })
       }
-      // Store each chunk separately
       await kv.set(`ico_dealer_chunk_${chunkIndex}`, chunkMap)
       return res.status(200).json({ ok: true, chunk: chunkIndex, dmas: Object.keys(chunkMap).length })
     }
 
+    // ── Dealer finalize ──────────────────────────────────────────────────────
     if (fileType === 'dealer_finalize') {
-      // Assemble all chunks into final dealer data
-      const { totalDmas, totalDealers } = req.body
-      // Determine how many chunks exist by reading until missing
+      const { totalDealers } = body
       const assembled = {}
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 30; i++) {
         const chunk = await kv.get(`ico_dealer_chunk_${i}`)
         if (!chunk) break
         Object.assign(assembled, chunk)
         await kv.del(`ico_dealer_chunk_${i}`)
       }
-
       await kv.set('ico_dealer_data', assembled)
       await kv.set('ico_dealer_meta', {
         dmas: Object.keys(assembled).length,
         dealers: totalDealers || Object.values(assembled).flat().length,
-        date: today, fileName,
-        updatedAt: new Date().toISOString()
+        date: today, fileName, updatedAt: new Date().toISOString()
       })
 
-      // Auto-activation check
+      // Auto-activation
       let activated = 0
       try {
         const reservations = await kv.get('ico_reservations') || []
         const activeSvocs = new Set()
         for (const entries of Object.values(assembled)) {
           for (const entry of entries) {
-            const svoc = entry[7]
-            if (svoc) activeSvocs.add(String(svoc).trim())
+            if (entry[7]) activeSvocs.add(String(entry[7]).trim())
           }
         }
         let changed = false
@@ -141,25 +79,59 @@ export default async function handler(req, res) {
       })
     }
 
+    // ── OLR and Dealer List — require rows ───────────────────────────────────
+    let parsedRows = body.rows
+    if (!parsedRows && body.fileData) {
+      const buffer = Buffer.from(body.fileData, 'base64')
+      const wb = XLSX.read(buffer, { type: 'buffer' })
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      parsedRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
+    }
+    if (!parsedRows) return res.status(400).json({ error: 'Missing rows or fileData' })
+
+    // ── OLR Upload ───────────────────────────────────────────────────────────
+    if (fileType === 'mat') {
+      const matMap = {}
+      let curDMA = ''
+      for (let i = 1; i < parsedRows.length; i++) {
+        const row = parsedRows[i]
+        const dmaCol = row[5] ? String(row[5]).trim().toUpperCase() : ''
+        if (dmaCol && dmaCol !== 'NAN') curDMA = dmaCol
+        const zr = row[1]
+        if (!zr && zr !== 0) continue
+        let z
+        try { z = String(parseInt(zr)).padStart(5, '0') } catch { continue }
+        if (z.length !== 5) continue
+        const city = row[3] ? String(row[3]).trim() : ''
+        const state = row[4] ? String(row[4]).trim() : ''
+        let target = null, avail = null
+        try { if (row[6] !== null) target = parseInt(String(row[6]).replace(/,/g,'')) } catch {}
+        try { if (row[7] !== null) avail = parseInt(String(row[7]).replace(/,/g,'')) } catch {}
+        matMap[z] = [city, state, curDMA, target || null, avail !== undefined ? avail : null]
+      }
+      const json = JSON.stringify(matMap)
+      const chunkSize = 800 * 1024
+      const chunks = []
+      for (let i = 0; i < json.length; i += chunkSize) chunks.push(json.slice(i, i + chunkSize))
+      for (let i = 0; i < chunks.length; i++) await kv.set(`ico_mat_chunk_${i}`, chunks[i])
+      await kv.set('ico_mat_meta', { chunks: chunks.length, zips: Object.keys(matMap).length, date: today, fileName, updatedAt: new Date().toISOString() })
+      return res.status(200).json({ ok: true, type: 'mat', zips: Object.keys(matMap).length, date: today, chunks: chunks.length })
+    }
+
+    // ── Dealer List Upload ───────────────────────────────────────────────────
     if (fileType === 'dealerList') {
-      // Parse Dealer List — monthly performance data
-      // Store as zip -> [dec, jan, feb, mar] leads and pcts
       let headerRow = 0
       for (let i = 0; i < Math.min(5, parsedRows.length); i++) {
-        if (parsedRows[i].some(v => v && String(v).toLowerCase().includes('zip'))) {
-          headerRow = i; break
-        }
+        if (parsedRows[i].some(v => v && String(v).toLowerCase().includes('zip'))) { headerRow = i; break }
       }
       const headers = parsedRows[headerRow].map(h => h ? String(h).toLowerCase().trim() : '')
       const zipIdx = headers.findIndex(h => h.includes('zip'))
-
       const perfMap = {}
       for (let i = headerRow + 1; i < parsedRows.length; i++) {
         const row = parsedRows[i]
         if (!row[zipIdx]) continue
         let z
         try { z = String(parseInt(row[zipIdx])).padStart(5,'0') } catch { continue }
-        // Collect monthly columns (look for month-like headers)
         const monthData = []
         for (let j = 0; j < headers.length; j++) {
           if (headers[j].match(/jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/)) {
@@ -168,20 +140,9 @@ export default async function handler(req, res) {
         }
         if (monthData.length) perfMap[z] = monthData
       }
-
-      // Store as object directly (not pre-stringified)
       await kv.set('ico_perf_data', perfMap)
-      await kv.set('ico_perf_meta', { 
-        zips: Object.keys(perfMap).length,
-        date: today, fileName,
-        updatedAt: new Date().toISOString()
-      })
-
-      return res.status(200).json({ 
-        ok: true, type: 'dealerList',
-        zips: Object.keys(perfMap).length,
-        date: today 
-      })
+      await kv.set('ico_perf_meta', { zips: Object.keys(perfMap).length, date: today, fileName, updatedAt: new Date().toISOString() })
+      return res.status(200).json({ ok: true, type: 'dealerList', zips: Object.keys(perfMap).length, date: today })
     }
 
     return res.status(400).json({ error: `Unknown fileType: ${fileType}` })
