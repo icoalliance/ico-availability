@@ -1110,7 +1110,7 @@ function UpdateModal({ onClose, onDataUpdated }) {
 
         // Split into chunks of 40 DMAs (~160KB max per chunk)
         const dmaKeys = Object.keys(dealerMap)
-        const chunkSize = 40
+        const chunkSize = 10
         const totalChunks = Math.ceil(dmaKeys.length / chunkSize)
         for (let ci = 0; ci < totalChunks; ci++) {
           const chunkKeys = dmaKeys.slice(ci * chunkSize, (ci + 1) * chunkSize)
