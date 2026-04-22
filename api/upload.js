@@ -34,25 +34,20 @@ export default async function handler(req, res) {
 
     // ── Dealer finalize ──────────────────────────────────────────────────────
     if (fileType === 'dealer_finalize') {
-      const { totalDealers } = body
-      const assembled = {}
-      for (let i = 0; i < 30; i++) {
-        const chunk = await kv.get(`ico_dealer_chunk_${i}`)
-        if (!chunk) break
-        Object.assign(assembled, chunk)
-        await kv.del(`ico_dealer_chunk_${i}`)
-      }
-      await kv.set('ico_dealer_data', assembled)
+      const { totalDealers, totalDmas, totalChunks: sentChunks } = body
+      // Count how many chunks were stored
+      const numChunks = sentChunks || 20
       await kv.set('ico_dealer_meta', {
-        dmas: Object.keys(assembled).length,
-        dealers: totalDealers || Object.values(assembled).flat().length,
+        dmas: totalDmas || 0,
+        dealers: totalDealers || 0,
+        chunks: numChunks,
         date: today, fileName, updatedAt: new Date().toISOString()
       })
 
       return res.status(200).json({
         ok: true, type: 'dealer',
-        dmas: Object.keys(assembled).length,
-        dealers: totalDealers || Object.values(assembled).flat().length,
+        dmas: totalDmas || 0,
+        dealers: totalDealers || 0,
         date: today
       })
     }

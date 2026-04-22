@@ -1131,12 +1131,11 @@ function UpdateModal({ onClose, onDataUpdated }) {
         const finalRes = await fetch('/api/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dealerMap: {}, fileType: 'dealer_finalize', fileName: file.name, totalDmas: dmaKeys.length, totalDealers: Object.values(dealerMap).flat().length })
+          body: JSON.stringify({ dealerMap: {}, fileType: 'dealer_finalize', fileName: file.name, totalDmas: dmaKeys.length, totalDealers: Object.values(dealerMap).flat().length, totalChunks })
         })
         const result = await finalRes.json()
         if (!finalRes.ok) throw new Error(result.error || 'Finalize failed')
-        const activatedMsg = result.activated > 0 ? ` · ${result.activated} reservation${result.activated > 1 ? 's' : ''} auto-activated` : ''
-        setMsg(ft, `✓ ${result.dealers.toLocaleString()} dealers across ${result.dmas} DMAs loaded — data date updated to ${result.date}${activatedMsg}`, 'success')
+        setMsg(ft, `✓ ${(result.dealers || 0).toLocaleString()} dealers across ${result.dmas || result.totalDmas || 0} DMAs loaded — data date updated to ${result.date}`, 'success')
         setUploading(p => ({...p, [ft]: false}))
         return
       }
@@ -1165,8 +1164,7 @@ function UpdateModal({ onClose, onDataUpdated }) {
           onDataUpdated(result.date, null)
         }
       } else if (ft === 'dealer') {
-        const activatedMsg = result.activated > 0 ? ` · ${result.activated} reservation${result.activated > 1 ? 's' : ''} auto-activated` : ''
-        setMsg(ft, `✓ ${result.dealers.toLocaleString()} dealers across ${result.dmas} DMAs loaded — data date updated to ${result.date}${activatedMsg}`, 'success')
+        setMsg(ft, `✓ ${(result.dealers || 0).toLocaleString()} dealers across ${result.dmas || result.totalDmas || 0} DMAs loaded — data date updated to ${result.date}`, 'success')
         const dealerRes = await fetch('/api/matdata?type=dealer')
         if (dealerRes.ok) {
           const { dealerMap: liveDealer } = await dealerRes.json()

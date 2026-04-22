@@ -32,8 +32,14 @@ export default async function handler(req, res) {
     if (type === 'dealer') {
       const meta = await kv.get('ico_dealer_meta')
       if (!meta) return res.status(404).json({ error: 'No dealer data in Redis' })
-      const dealerMap = await kv.get('ico_dealer_data')
-      // dealerMap is stored as object directly, no JSON.parse needed
+      // Assemble dealer map from chunks (stored as ico_dealer_chunk_0..N)
+      const dealerMap = {}
+      const numChunks = meta.chunks || 20
+      for (let i = 0; i < numChunks; i++) {
+        const chunk = await kv.get(`ico_dealer_chunk_${i}`)
+        if (!chunk) break
+        Object.assign(dealerMap, chunk)
+      }
       return res.status(200).json({ dealerMap, meta })
     }
 
