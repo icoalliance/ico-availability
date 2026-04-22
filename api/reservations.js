@@ -68,9 +68,7 @@ export default async function handler(req, res) {
         currentDealerTarget: body.currentDealerTarget || null,
         marketTier: body.marketTier || null,
         tierMinLeads: body.tierMinLeads || null,
-        // Email fields
-        scoreBreakdown: body.scoreBreakdown || null,
-        nearbyBCNote: body.nearbyBCNote || null,
+        // Note: scoreBreakdown not stored to keep Redis key size manageable
       }
 
       const all = await kv.get(KEY) || []

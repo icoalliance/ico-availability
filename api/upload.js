@@ -49,33 +49,11 @@ export default async function handler(req, res) {
         date: today, fileName, updatedAt: new Date().toISOString()
       })
 
-      // Auto-activation
-      let activated = 0
-      try {
-        const reservations = await kv.get('ico_reservations') || []
-        const activeSvocs = new Set()
-        for (const entries of Object.values(assembled)) {
-          for (const entry of entries) {
-            if (entry[7]) activeSvocs.add(String(entry[7]).trim())
-          }
-        }
-        let changed = false
-        for (let i = 0; i < reservations.length; i++) {
-          const r = reservations[i]
-          if ((r.status !== 'active' && r.status !== 'expired') || !r.svoc) continue
-          if (activeSvocs.has(String(r.svoc).trim())) {
-            reservations[i] = { ...r, status: 'activated', activatedAt: new Date().toISOString() }
-            activated++; changed = true
-          }
-        }
-        if (changed) await kv.set('ico_reservations', reservations)
-      } catch(e) { console.error('Auto-activation failed:', e) }
-
       return res.status(200).json({
         ok: true, type: 'dealer',
         dmas: Object.keys(assembled).length,
         dealers: totalDealers || Object.values(assembled).flat().length,
-        activated, date: today
+        date: today
       })
     }
 
