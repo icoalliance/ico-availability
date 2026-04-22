@@ -1083,18 +1083,17 @@ function UpdateModal({ onClose, onDataUpdated }) {
 
       setMsg(ft, 'Processing…', 'info')
 
-      // For dealer export: build dealerMap client-side to reduce payload size
-      // Raw rows ~472KB vs processed dealerMap ~382KB
-      let body
+      setMsg(ft, 'Uploading…', 'info')
+
+      // For dealer export: build dealerMap client-side then send in chunks
+      // (Vercel body limit ~1MB; full dealerMap ~383KB but JSON overhead pushes over)
       if (ft === 'dealer') {
-        const headers = rows[0] ? rows[0].map(h => h ? String(h).toLowerCase().trim() : '') : []
-        const findCol = (exact, fallback) => { const i = headers.findIndex(h => h === exact); return i >= 0 ? i : fallback }
-        const zipIdx = findCol('dealer zip', 8), nameIdx = findCol('dealer', 3)
-        const groupIdx = findCol('group', 2), dmaIdx = findCol('dealer dma', 10)
-        const rateIdx = findCol('rate', 5), mktIdx = findCol('market rates', 6)
-        const targetIdx = findCol('dat target', 7), availIdx = findCol('available leads', 9)
-        const svocIdx = findCol('svoc', 0)
-        const parseNum = v => { try { return (v !== null && v !== undefined && v !== '') ? parseInt(String(v).replace(/[^0-9-]/g,'')) || null : null } catch { return null } }
+        const hdrs = rows[0] ? rows[0].map(h => h ? String(h).toLowerCase().trim() : '') : []
+        const fc = (exact, fallback) => { const i = hdrs.findIndex(h => h === exact); return i >= 0 ? i : fallback }
+        const zipIdx=fc('dealer zip',8), nameIdx=fc('dealer',3), groupIdx=fc('group',2)
+        const dmaIdx=fc('dealer dma',10), rateIdx=fc('rate',5), mktIdx=fc('market rates',6)
+        const targetIdx=fc('dat target',7), availIdx=fc('available leads',9), svocIdx=fc('svoc',0)
+        const pn = v => { try { return (v!=null&&v!=='')?parseInt(String(v).replace(/[^0-9-]/g,''))||null:null } catch { return null } }
         const dealerMap = {}
         for (let i = 1; i < rows.length; i++) {
           const row = rows[i]
@@ -1103,27 +1102,49 @@ function UpdateModal({ onClose, onDataUpdated }) {
           if (z.length !== 5 || z === '00000') continue
           const dma = row[dmaIdx] ? String(row[dmaIdx]).trim().toUpperCase() : 'UNKNOWN'
           if (!dealerMap[dma]) dealerMap[dma] = []
-          dealerMap[dma].push([
-            z, row[nameIdx] ? String(row[nameIdx]).trim() : '',
-            row[groupIdx] ? String(row[groupIdx]).trim() : '',
-            row[rateIdx] ? String(row[rateIdx]).trim() : '',
-            row[mktIdx] ? String(row[mktIdx]).trim() : '',
-            parseNum(row[targetIdx]), parseNum(row[availIdx]),
-            row[svocIdx] ? String(row[svocIdx]).trim() : '',
-            null, null, null, null, null
-          ])
+          dealerMap[dma].push([z, row[nameIdx]?String(row[nameIdx]).trim():'',
+            row[groupIdx]?String(row[groupIdx]).trim():'', row[rateIdx]?String(row[rateIdx]).trim():'',
+            row[mktIdx]?String(row[mktIdx]).trim():'', pn(row[targetIdx]), pn(row[availIdx]),
+            row[svocIdx]?String(row[svocIdx]).trim():'', null,null,null,null,null])
         }
-        body = { dealerMap, fileType: ft, fileName: file.name }
-      } else {
-        body = { rows, fileType: ft, fileName: file.name }
-      }
 
-      setMsg(ft, 'Uploading…', 'info')
+        // Split into chunks of 40 DMAs (~160KB max per chunk)
+        const dmaKeys = Object.keys(dealerMap)
+        const chunkSize = 40
+        const totalChunks = Math.ceil(dmaKeys.length / chunkSize)
+        for (let ci = 0; ci < totalChunks; ci++) {
+          const chunkKeys = dmaKeys.slice(ci * chunkSize, (ci + 1) * chunkSize)
+          const chunkMap = {}
+          chunkKeys.forEach(k => { chunkMap[k] = dealerMap[k] })
+          setMsg(ft, `Uploading chunk ${ci + 1}/${totalChunks}…`, 'info')
+          const chunkRes = await fetch('/api/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dealerMap: chunkMap, fileType: 'dealer', fileName: file.name, chunkIndex: ci, totalChunks })
+          })
+          if (!chunkRes.ok) {
+            const err = await chunkRes.json().catch(() => ({ error: 'Server error' }))
+            throw new Error(err.error || `Chunk ${ci + 1} failed`)
+          }
+        }
+        // Return last chunk result for success message
+        const finalRes = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dealerMap: {}, fileType: 'dealer_finalize', fileName: file.name, totalDmas: dmaKeys.length, totalDealers: Object.values(dealerMap).flat().length })
+        })
+        const result = await finalRes.json()
+        if (!finalRes.ok) throw new Error(result.error || 'Finalize failed')
+        const activatedMsg = result.activated > 0 ? ` · ${result.activated} reservation${result.activated > 1 ? 's' : ''} auto-activated` : ''
+        setMsg(ft, `✓ ${result.dealers.toLocaleString()} dealers across ${result.dmas} DMAs loaded — data date updated to ${result.date}${activatedMsg}`, 'success')
+        setUploading(p => ({...p, [ft]: false}))
+        return
+      }
 
       const res = await fetch('/api/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify({ rows, fileType: ft, fileName: file.name })
       })
 
       if (!res.ok) {

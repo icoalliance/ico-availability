@@ -80,35 +80,42 @@ export default async function handler(req, res) {
     }
 
     if (fileType === 'dealer') {
-      // Accept pre-built dealerMap from client (parsed client-side to avoid 413)
-      const dealerMap = req.body.dealerMap
-      if (!dealerMap || typeof dealerMap !== 'object') {
-        return res.status(400).json({ error: 'Missing dealerMap in request body' })
+      // Receive one chunk of DMAs and merge into Redis
+      const { dealerMap: chunkMap, chunkIndex, totalChunks } = req.body
+      if (!chunkMap || typeof chunkMap !== 'object') {
+        return res.status(400).json({ error: 'Missing dealerMap chunk' })
+      }
+      // Store each chunk separately
+      await kv.set(`ico_dealer_chunk_${chunkIndex}`, chunkMap)
+      return res.status(200).json({ ok: true, chunk: chunkIndex, dmas: Object.keys(chunkMap).length })
+    }
+
+    if (fileType === 'dealer_finalize') {
+      // Assemble all chunks into final dealer data
+      const { totalDmas, totalDealers } = req.body
+      // Determine how many chunks exist by reading until missing
+      const assembled = {}
+      for (let i = 0; i < 20; i++) {
+        const chunk = await kv.get(`ico_dealer_chunk_${i}`)
+        if (!chunk) break
+        Object.assign(assembled, chunk)
+        await kv.del(`ico_dealer_chunk_${i}`)
       }
 
-      // Store as object directly (not pre-stringified) to avoid double-encoding
-      await kv.set('ico_dealer_data', dealerMap)
+      await kv.set('ico_dealer_data', assembled)
       await kv.set('ico_dealer_meta', {
-        dmas: Object.keys(dealerMap).length,
-        dealers: Object.values(dealerMap).flat().length,
+        dmas: Object.keys(assembled).length,
+        dealers: totalDealers || Object.values(assembled).flat().length,
         date: today, fileName,
         updatedAt: new Date().toISOString()
       })
 
-      // Return success immediately, then run auto-activation async
-      // (avoids Vercel 10s timeout from multiple sequential Redis calls)
-      res.status(200).json({
-        ok: true, type: 'dealer',
-        dmas: Object.keys(dealerMap).length,
-        dealers: Object.values(dealerMap).flat().length,
-        date: today
-      })
-
-      // Auto-activation: fire and forget after response is sent
+      // Auto-activation check
+      let activated = 0
       try {
         const reservations = await kv.get('ico_reservations') || []
         const activeSvocs = new Set()
-        for (const entries of Object.values(dealerMap)) {
+        for (const entries of Object.values(assembled)) {
           for (const entry of entries) {
             const svoc = entry[7]
             if (svoc) activeSvocs.add(String(svoc).trim())
@@ -117,19 +124,21 @@ export default async function handler(req, res) {
         let changed = false
         for (let i = 0; i < reservations.length; i++) {
           const r = reservations[i]
-          if (r.status !== 'active' && r.status !== 'expired') continue
-          if (r.opsStatus !== 'APPROVED' && r.opsStatus !== 'PENDING') continue
-          if (!r.svoc) continue
+          if ((r.status !== 'active' && r.status !== 'expired') || !r.svoc) continue
           if (activeSvocs.has(String(r.svoc).trim())) {
-            reservations[i] = { ...r, status: 'activated', activatedAt: new Date().toISOString(), activatedViaSvoc: r.svoc }
-            changed = true
+            reservations[i] = { ...r, status: 'activated', activatedAt: new Date().toISOString() }
+            activated++; changed = true
           }
         }
         if (changed) await kv.set('ico_reservations', reservations)
-      } catch(e) {
-        console.error('Auto-activation check failed:', e)
-      }
-      return
+      } catch(e) { console.error('Auto-activation failed:', e) }
+
+      return res.status(200).json({
+        ok: true, type: 'dealer',
+        dmas: Object.keys(assembled).length,
+        dealers: totalDealers || Object.values(assembled).flat().length,
+        activated, date: today
+      })
     }
 
     if (fileType === 'dealerList') {
