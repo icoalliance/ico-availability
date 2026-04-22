@@ -84,5 +84,31 @@ export default async function handler(req, res) {
     } catch(e) { return res.status(500).json({ error: e.message }) }
   }
 
+  // PIN management (ops-setup merged here)
+  const ADMIN_KEY = process.env.OPS_ADMIN_KEY || 'ico-admin-2026'
+  if (req.method === 'GET' && req.query.action === 'setup') {
+    const { adminKey } = req.query
+    if (adminKey !== ADMIN_KEY) return res.status(401).json({ error: 'Invalid admin key' })
+    const pins = await kv.get(OPS_PINS_KEY) || DEFAULT_PINS
+    return res.status(200).json({ pins })
+  }
+  if (req.method === 'POST' && req.body?.action === 'setup_add') {
+    const { adminKey, pin, name } = req.body
+    if (adminKey !== ADMIN_KEY) return res.status(401).json({ error: 'Invalid admin key' })
+    if (!pin || !name) return res.status(400).json({ error: 'pin and name required' })
+    const pins = await kv.get(OPS_PINS_KEY) || {}
+    pins[pin] = name
+    await kv.set(OPS_PINS_KEY, pins)
+    return res.status(200).json({ ok: true, pins })
+  }
+  if (req.method === 'DELETE' && req.query.action === 'setup_remove') {
+    const { adminKey, pin } = req.query
+    if (adminKey !== ADMIN_KEY) return res.status(401).json({ error: 'Invalid admin key' })
+    const pins = await kv.get(OPS_PINS_KEY) || {}
+    delete pins[pin]
+    await kv.set(OPS_PINS_KEY, pins)
+    return res.status(200).json({ ok: true, pins })
+  }
+
   return res.status(405).json({ error: 'Method not allowed' })
 }

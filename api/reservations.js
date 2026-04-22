@@ -14,6 +14,46 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   if (req.method === 'GET') {
+    const { action, id, days } = req.query
+
+    // ?action=extend&id=xxx&days=7 — from expiry warning email
+    if (action === 'extend' && id) {
+      try {
+        const all = await kv.get(KEY) || []
+        const idx = all.findIndex(r => r.id === id)
+        if (idx === -1) return res.status(404).send('Reservation not found')
+        const r = all[idx]
+        const daysToAdd = parseInt(days) || 7
+        const newExpiry = new Date(Math.max(new Date(r.expiresAt).getTime(), Date.now()) + daysToAdd * 86400000)
+        all[idx] = { ...r, expiresAt: newExpiry.toISOString(), status: 'active', expiryWarningSent: false, extendedAt: new Date().toISOString() }
+        await kv.set(KEY, all)
+        return res.redirect(302, 'https://ico-availability.vercel.app?zip=' + r.zip + '&leads=' + r.leadsReserved)
+      } catch(e) { return res.status(500).send('Error: ' + e.message) }
+    }
+
+    // ?action=release&id=xxx — from expiry warning email
+    if (action === 'release' && id) {
+      try {
+        const all = await kv.get(KEY) || []
+        const idx = all.findIndex(r => r.id === id)
+        if (idx === -1) return res.status(404).send('Reservation not found')
+        const r = all[idx]
+        all[idx] = { ...r, status: 'expired', releasedAt: new Date().toISOString(), releasedVia: 'expiry_email' }
+        await kv.set(KEY, all)
+        return res.status(200).send(`<!DOCTYPE html><html><head><title>Leads Released</title></head><body style="font-family:Arial,sans-serif;max-width:480px;margin:60px auto;text-align:center;"><div style="background:#00205b;color:#fff;padding:20px;border-radius:10px 10px 0 0;"><strong style="font-size:18px;">ICO Intelligence</strong></div><div style="border:1px solid #e2e8f0;padding:32px;border-radius:0 0 10px 10px;"><div style="font-size:32px;margin-bottom:12px;">✓</div><h2 style="color:#00205b;">Leads Released</h2><p style="color:#64748b;">${r.leadsReserved} leads for <strong>${r.dealerName}</strong> (${r.zip}) have been released back to the pool.</p><a href="https://ico-availability.vercel.app" style="display:inline-block;margin-top:20px;background:#00205b;color:#fff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:700;">Back to ICO Intelligence</a></div></body></html>`)
+      } catch(e) { return res.status(500).send('Error: ' + e.message) }
+    }
+
+    // ?action=cleanup — one-time: remove scoreBreakdown to slim Redis key
+    if (action === 'cleanup') {
+      try {
+        const all = await kv.get(KEY) || []
+        const slimmed = all.map(r => { const { scoreBreakdown, nearbyBCNote, ...slim } = r; return slim })
+        await kv.set(KEY, slimmed)
+        return res.status(200).json({ ok: true, total: all.length, newSizeKB: Math.round(JSON.stringify(slimmed).length / 1024) })
+      } catch(e) { return res.status(500).json({ error: e.message }) }
+    }
+
     try {
       const all = await kv.get(KEY) || []
       const now = Date.now()

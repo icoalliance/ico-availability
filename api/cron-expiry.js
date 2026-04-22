@@ -28,8 +28,8 @@ async function sendEmail(to, subject, html) {
 }
 
 function expiryWarningHtml(r, daysLeft) {
-  const extendUrl = `${APP_URL}/api/extend-reservation?id=${r.id}&days=7`
-  const releaseUrl = `${APP_URL}/api/release-reservation?id=${r.id}`
+  const extendUrl = `${APP_URL}/api/reservations?action=extend&id=${r.id}&days=7`
+  const releaseUrl = `${APP_URL}/api/reservations?action=release&id=${r.id}`
   const viewUrl = `${APP_URL}?zip=${r.zip}&leads=${r.leadsReserved}`
   const expiryDate = new Date(r.expiresAt).toLocaleDateString('en-US', { 
     month: 'long', day: 'numeric', year: 'numeric' 

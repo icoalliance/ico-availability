@@ -2461,7 +2461,7 @@ function PinManager({ opsUser }) {
   const ADMIN_KEY = 'ico-admin-2026'
 
   async function loadPins() {
-    const res = await fetch(`/api/ops-setup?adminKey=${ADMIN_KEY}`)
+    const res = await fetch(`/api/ops?adminKey=${ADMIN_KEY}`)
     const data = await res.json()
     if (data.pins) setPins(data.pins)
   }
@@ -2469,7 +2469,7 @@ function PinManager({ opsUser }) {
   async function addPin() {
     if (!newPin || !newName) return
     setSaving(true)
-    const res = await fetch('/api/ops-setup', {
+    const res = await fetch('/api/ops', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminKey: ADMIN_KEY, pin: newPin, name: newName })
@@ -2480,7 +2480,7 @@ function PinManager({ opsUser }) {
   }
 
   async function removePin(pin) {
-    const res = await fetch('/api/ops-setup', {
+    const res = await fetch('/api/ops', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ adminKey: ADMIN_KEY, pin })
