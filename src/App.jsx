@@ -1081,13 +1081,49 @@ function UpdateModal({ onClose, onDataUpdated }) {
       const ws = wb.Sheets[wb.SheetNames[0]]
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
 
+      setMsg(ft, 'Processing…', 'info')
+
+      // For dealer export: build dealerMap client-side to reduce payload size
+      // Raw rows ~472KB vs processed dealerMap ~382KB
+      let body
+      if (ft === 'dealer') {
+        const headers = rows[0] ? rows[0].map(h => h ? String(h).toLowerCase().trim() : '') : []
+        const findCol = (exact, fallback) => { const i = headers.findIndex(h => h === exact); return i >= 0 ? i : fallback }
+        const zipIdx = findCol('dealer zip', 8), nameIdx = findCol('dealer', 3)
+        const groupIdx = findCol('group', 2), dmaIdx = findCol('dealer dma', 10)
+        const rateIdx = findCol('rate', 5), mktIdx = findCol('market rates', 6)
+        const targetIdx = findCol('dat target', 7), availIdx = findCol('available leads', 9)
+        const svocIdx = findCol('svoc', 0)
+        const parseNum = v => { try { return (v !== null && v !== undefined && v !== '') ? parseInt(String(v).replace(/[^0-9-]/g,'')) || null : null } catch { return null } }
+        const dealerMap = {}
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i]
+          if (!row[zipIdx] && row[zipIdx] !== 0) continue
+          let z; try { z = String(parseInt(String(row[zipIdx]).replace(/[^0-9]/g,''))).padStart(5,'0') } catch { continue }
+          if (z.length !== 5 || z === '00000') continue
+          const dma = row[dmaIdx] ? String(row[dmaIdx]).trim().toUpperCase() : 'UNKNOWN'
+          if (!dealerMap[dma]) dealerMap[dma] = []
+          dealerMap[dma].push([
+            z, row[nameIdx] ? String(row[nameIdx]).trim() : '',
+            row[groupIdx] ? String(row[groupIdx]).trim() : '',
+            row[rateIdx] ? String(row[rateIdx]).trim() : '',
+            row[mktIdx] ? String(row[mktIdx]).trim() : '',
+            parseNum(row[targetIdx]), parseNum(row[availIdx]),
+            row[svocIdx] ? String(row[svocIdx]).trim() : '',
+            null, null, null, null, null
+          ])
+        }
+        body = { dealerMap, fileType: ft, fileName: file.name }
+      } else {
+        body = { rows, fileType: ft, fileName: file.name }
+      }
+
       setMsg(ft, 'Uploading…', 'info')
 
-      // Send parsed rows (not raw file) to avoid body size limits
       const res = await fetch('/api/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows, fileType: ft, fileName: file.name })
+        body: JSON.stringify(body)
       })
 
       if (!res.ok) {

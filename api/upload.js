@@ -80,53 +80,10 @@ export default async function handler(req, res) {
     }
 
     if (fileType === 'dealer') {
-      // Parse Dealer Export using known fixed column positions
-      // Columns: SVOC(0), BC Status(1), Group(2), Dealer(3), Product Name(4),
-      //          Rate(5), Market Rates(6), DAT Target(7), Dealer Zip(8), 
-      //          Available Leads(9), Dealer DMA(10), Code(11)
-      const headers = parsedRows[0] ? parsedRows[0].map(h => h ? String(h).toLowerCase().trim() : '') : []
-      
-      // Use exact column name matching with fallback to position
-      const findCol = (exact, fallbackIdx) => {
-        const idx = headers.findIndex(h => h === exact)
-        return idx >= 0 ? idx : fallbackIdx
-      }
-      const zipIdx    = findCol('dealer zip', 8)
-      const nameIdx   = findCol('dealer', 3)
-      const groupIdx  = findCol('group', 2)
-      const dmaIdx    = findCol('dealer dma', 10)
-      const rateIdx   = findCol('rate', 5)
-      const mktIdx    = findCol('market rates', 6)
-      const targetIdx = findCol('dat target', 7)
-      const availIdx  = findCol('available leads', 9)
-      const svocIdx   = findCol('svoc', 0)
-
-      const dealerMap = {}
-      for (let i = 1; i < parsedRows.length; i++) {
-        const row = parsedRows[i]
-        if (!row[zipIdx] && row[zipIdx] !== 0) continue
-        let z
-        try { z = String(parseInt(String(row[zipIdx]).replace(/[^0-9]/g,''))).padStart(5,'0') } catch { continue }
-        if (z.length !== 5 || z === '00000') continue
-        
-        const dma = dmaIdx >= 0 && row[dmaIdx] 
-          ? String(row[dmaIdx]).trim().toUpperCase() 
-          : 'UNKNOWN'
-        if (!dealerMap[dma]) dealerMap[dma] = []
-        
-        const parseNum = (v) => { try { return v !== null && v !== undefined && v !== '' ? parseInt(String(v).replace(/[^0-9-]/g,'')) || null : null } catch { return null } }
-
-        dealerMap[dma].push([
-          z,
-          nameIdx >= 0 && row[nameIdx] ? String(row[nameIdx]).trim() : '',
-          groupIdx >= 0 && row[groupIdx] ? String(row[groupIdx]).trim() : '',
-          rateIdx >= 0 && row[rateIdx] ? String(row[rateIdx]).trim() : '',
-          mktIdx >= 0 && row[mktIdx] ? String(row[mktIdx]).trim() : '',
-          targetIdx >= 0 ? parseNum(row[targetIdx]) : null,
-          availIdx >= 0 ? parseNum(row[availIdx]) : null,
-          svocIdx >= 0 && row[svocIdx] ? String(row[svocIdx]).trim() : '',
-          null, null, null, null, null
-        ])
+      // Accept pre-built dealerMap from client (parsed client-side to avoid 413)
+      const dealerMap = req.body.dealerMap
+      if (!dealerMap || typeof dealerMap !== 'object') {
+        return res.status(400).json({ error: 'Missing dealerMap in request body' })
       }
 
       // Store as object directly (not pre-stringified) to avoid double-encoding
