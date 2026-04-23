@@ -2,7 +2,7 @@ import { matMap } from './matMap'
 import { coordsMap } from './coordsMap'
 import { dealerMap } from './dealerMap'
 
-export const LPO = { jan: 2.0, feb: 2.1, mar: 2.0, current: 2.0, month: "Mar '26" }
+export const LPO = { jan: 2.0, feb: 2.1, mar: 2.0, apr: 2.0, current: 2.0, month: "Apr '26" }
 
 export function haversine(lat1, lon1, lat2, lon2) {
   const R = 3958.8

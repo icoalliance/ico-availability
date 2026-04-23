@@ -130,8 +130,8 @@ function AvailCards({ av, desired }) {
       <div className="lpo-panel">
         <div className="lpo-title">Leads per Offer</div>
         <div className="lpo-months">
-          {[['Jan \'26', LPO.jan], ['Feb \'26', LPO.feb], ['Mar \'26', LPO.mar]].map(([lbl, val], i) => (
-            <div key={lbl} className={`lpo-mo ${i === 2 ? 'lpo-mo-current' : ''}`}>
+          {[['Jan \'26', LPO.jan], ['Feb \'26', LPO.feb], ['Mar \'26', LPO.mar], ['Apr \'26', LPO.apr]].map(([lbl, val], i) => (
+            <div key={lbl} className={`lpo-mo ${i === 3 ? 'lpo-mo-current' : ''}`}>
               <div className="lpo-mo-label">{lbl}</div>
               <div className="lpo-mo-val">{val}</div>
             </div>
