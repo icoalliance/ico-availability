@@ -1378,6 +1378,61 @@ export default function App() {
     loadLiveData()
   }, [])
 
+  // ── N.E.R.V. SIGNAL EXPORTER ─────────────────────────────────────────────
+  useEffect(() => {
+    try {
+      const dmaEntries = Object.entries(dmaSaturation)
+      const totalDmas = dmaEntries.length
+
+      // Constrained = negative availability (oversold)
+      const constrained = dmaEntries
+        .filter(([, v]) => v.avail < 0)
+        .sort((a, b) => a[1].avail - b[1].avail) // most negative first
+
+      // Low = positive but below 10% of target
+      const low = dmaEntries
+        .filter(([, v]) => v.avail >= 0 && v.target > 0 && v.avail / v.target < 0.10)
+        .sort((a, b) => a[1].avail / a[1].target - b[1].avail / b[1].target)
+
+      const top3 = [...constrained, ...low].slice(0, 3)
+
+      const items = top3.map(([dma, v]) => {
+        const pct = v.target > 0 ? Math.round(v.avail / v.target * 100) : 0
+        const value = v.avail < 0 ? 'OVERSOLD' : pct < 5 ? 'CRITICAL' : 'LOW'
+        const note = v.avail < 0
+          ? `${Math.abs(v.avail).toLocaleString()} over capacity · ${v.dealers} dealers`
+          : `${v.avail.toLocaleString()} avail of ${v.target.toLocaleString()} target (${pct}%)`
+        return { label: dma, value, note }
+      })
+
+      const signal = {
+        id: 'lead-availability-gaps',
+        source: 'KBB Lead Availability',
+        sourceType: 'lead_availability',
+        priority: constrained.length > 10 ? 'critical' : constrained.length > 0 ? 'watch' : 'active',
+        category: 'field',
+        title: 'Review lead availability gaps',
+        summary: `${constrained.length} of ${totalDmas} DMAs oversold · ${low.length} critically low · Data: ${DATA_DATE}`,
+        statusLine: `Live from Lead Availability · ${totalDmas} DMAs tracked`,
+        actionLabel: 'Open Lead Availability',
+        route: 'https://ico-availability.vercel.app',
+        lastUpdated: new Date().toISOString(),
+        items,
+      }
+
+      fetch('https://the-nerve-center.vercel.app/api/signals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer nerv-fox-2026' },
+        body: JSON.stringify(signal),
+      }).then(r => r.json()).then(d => {
+        console.log('N.E.R.V. lead availability signal exported:', d)
+      }).catch(e => console.warn('N.E.R.V. signal export failed:', e))
+
+      localStorage.setItem('nerv_signals_lead_availability', JSON.stringify([signal]))
+    } catch(e) { console.warn('N.E.R.V. signal builder error:', e) }
+  }, []) // Run once on mount
+  // ─────────────────────────────────────────────────────────────────────────
+
   // Ask for seller name once
   useEffect(() => {
     if (!sellerName) setShowNamePrompt(true)
